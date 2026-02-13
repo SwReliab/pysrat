@@ -1,21 +1,7 @@
 import pysrat
 from pysrat.data import NHPPData
 from pysrat.models.exp import ExponentialNHPP
-from pysrat.fit import compare, fit_em
-from pysrat.emfit import emfit
-
-
-def test_fit_em_exponential():
-    data = NHPPData.from_intervals(
-        time=[1.0, 2.0, 1.5],
-        fault=[0.0, 2.0, 1.0],
-        type=[0, 1, 0],
-    )
-    model = ExponentialNHPP()
-    res = fit_em(model, data, max_iter=5)
-    assert res.name == "exp"
-    assert res.params.shape == (2,)
-
+from pysrat.emfit import emfit, compare
 
 def test_emfit_exponential():
     data = NHPPData.from_intervals(

@@ -4,15 +4,10 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 from .data import NHPPData
-from .result import FitCollection, FitNHPPResult
 from .nhpp import NHPPModel
 
 
 def _normalize_results(results):
-    if isinstance(results, FitCollection):
-        return results.all
-    if isinstance(results, FitNHPPResult):
-        return {results.srm.name: results}
     if isinstance(results, NHPPModel):
         return {results.name: results}
     if isinstance(results, dict):
@@ -20,9 +15,7 @@ def _normalize_results(results):
     if isinstance(results, (list, tuple)):
         out = {}
         for item in results:
-            if isinstance(item, FitNHPPResult):
-                out[item.srm.name] = item
-            elif isinstance(item, NHPPModel):
+            if isinstance(item, NHPPModel):
                 out[item.name] = item
             else:
                 raise TypeError("Unsupported results type")
