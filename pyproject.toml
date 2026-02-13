@@ -1,0 +1,33 @@
+[build-system]
+requires = [
+  "scikit-build-core>=0.9",
+  "pybind11>=2.11",
+]
+build-backend = "scikit_build_core.build"
+
+[project]
+name = "pysrat"
+version = "0.1.0"
+description = "Python bindings for SRAT (Software Reliability Assessment Tools) core."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { file = "LICENSE" }
+authors = [{ name = "Your Name" }]
+dependencies = [
+  "numpy>=1.23",
+  "scipy>=1.9",
+  "matplotlib>=3.7",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=7",
+  "build",
+  "twine",
+]
+
+[tool.scikit-build]
+cmake.minimum-version = "3.18"
+wheel.packages = ["src/pysrat"]
+# 生成物(.so/.pyd)をPythonパッケージ配下に置く
+wheel.install-dir = "."
