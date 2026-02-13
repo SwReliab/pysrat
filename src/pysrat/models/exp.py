@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import numpy as np
 
+from ..dists.exp import dexp, pexp
+
 from ..base import NHPPModel
 from ..data import NHPPData
 from .. import _core
@@ -32,7 +34,7 @@ class ExponentialNHPP(NHPPModel):
 
     def mvf(self, t):
         t = np.asarray(t, dtype=float)
-        return self.omega_() * (1.0 - np.exp(-self.rate_() * t))
+        return self.omega_() * pexp(t, rate=self.rate_(), lower_tail=True, log_p=False)
 
     def dmvf(self, t):
         t = np.asarray(t, dtype=float)
@@ -41,7 +43,7 @@ class ExponentialNHPP(NHPPModel):
 
     def intensity(self, t):
         t = np.asarray(t, dtype=float)
-        return self.omega_() * self.rate_() * np.exp(-self.rate_() * t)
+        return self.omega_() * dexp(t, rate=self.rate_(), log=False)
 
 
 ExpSRM = ExponentialNHPP
