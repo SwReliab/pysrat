@@ -127,28 +127,3 @@ py::dict em_exp_emstep(
   out["total"] = total;
   return out;
 }
-
-PYBIND11_MODULE(_core, m) {
-  m.doc() = "pysrat core bindings";
-
-  m.def(
-    "sum",
-    [](py::array_t<double, py::array::c_style | py::array::forcecast> x) {
-      auto buf = x.request();
-      if (buf.ndim != 1) throw std::runtime_error("x must be 1-D");
-      auto* ptr = static_cast<double*>(buf.ptr);
-      int n = static_cast<int>(buf.shape[0]);
-      return srat_sum(ptr, n);
-    },
-    py::arg("x"),
-    "Sum a 1-D array using the SRAT C core"
-  );
-
-  m.def(
-    "em_exp_emstep",
-    &em_exp_emstep,
-    py::arg("params"),
-    py::arg("data"),
-    "EM M-step for exponential SRGM (ported from Rcpp)"
-  );
-}
