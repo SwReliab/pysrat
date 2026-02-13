@@ -1,24 +1,12 @@
 import pysrat
 from pysrat.data import NHPPData
 from pysrat.models.exp import ExponentialNHPP
-from pysrat.emfit import emfit, compare
-
-def test_emfit_exponential():
-    data = NHPPData.from_intervals(
-        time=[1.0, 2.0, 1.5],
-        fault=[0.0, 2.0, 1.0],
-        type=[0, 1, 0],
-    )
-    model = ExponentialNHPP()
-    res = emfit(model, data, maxiter=5)
-    assert res.srm.name == "exp"
-    assert res.srm.params.shape == (2,)
-
+from pysrat.fit import compare
 
 def test_model_fit_api_exponential():
     d = NHPPData.from_counts([0, 1, 0, 5])
     model = ExponentialNHPP().fit(d, maxiter=5)
-    assert model.params.shape == (2,)
+    assert model.params_.shape == (2,)
     assert hasattr(model, "aic_")
 
 

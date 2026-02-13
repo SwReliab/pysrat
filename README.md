@@ -4,7 +4,7 @@ Python implementation of NHPP (non-homogeneous Poisson process) software reliabi
 
 ## Features
 
-- Scikit-learn–style estimators: `model.fit(data)`
+- Scikit-learn–style estimators: `model.fit(data)` and `params_`/`llf_`/`aic_`
 - NHPP data helpers: `NHPPData.from_intervals(...)`, `from_counts(...)`, `from_fault_times(...)`
 - Fast EM updates in C via pybind11
 - Simple plotting helpers (`plot_mvf`, `plot_dmvf`, `plot_rate`)
@@ -25,7 +25,7 @@ from pysrat import NHPPData, ExponentialNHPP, plot_mvf
 data = NHPPData.from_intervals(time=[1, 1, 1, 1], fault=[0, 1, 0, 5])
 
 model = ExponentialNHPP().fit(data)
-print(model.params)
+print(model.params_)
 print(model.aic_)
 
 plot_mvf(data, model)
@@ -58,7 +58,16 @@ fitted, best = compare([ExponentialNHPP()], data, criterion="AIC")
 - `plot_dmvf(data, model_or_results)`
 - `plot_rate(data, model_or_results)`
 
-`model_or_results` can be an `NHPPModel`, a `FitNHPPResult`, a `FitCollection`, a `dict[str, FitNHPPResult]`, or a list of models/results.
+`model_or_results` can be an `NHPPModel`, a `dict[str, NHPPModel]`, or a list of models.
+
+### Hyperparameters
+
+Models expose sklearn-style hyperparameters via `get_params()`/`set_params()`. For example:
+
+```python
+model = ExponentialNHPP(omega0=1.0, rate0=1.0)
+model.set_params(rate0=0.5)
+```
 
 ## Development
 

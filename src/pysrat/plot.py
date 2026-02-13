@@ -4,7 +4,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 from .data import NHPPData
-from .nhpp import NHPPModel
+from .base import NHPPModel
 
 
 def _normalize_results(results):
