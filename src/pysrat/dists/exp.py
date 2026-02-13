@@ -3,6 +3,8 @@ from __future__ import annotations
 import numpy as np
 from scipy.stats import expon
 
+__all__ = ["dexp", "pexp", "qexp", "rexp"]
+
 
 def _as_float_array(x):
     return np.asarray(x, dtype=float)
