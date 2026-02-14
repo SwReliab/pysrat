@@ -68,6 +68,7 @@ class NHPPModel(ABC):
         reltol: float = 1.0e-6,
         abstol: float = 1.0e-3,
         trace: bool = False,
+        verbose: bool = False,
         printsteps: int = 50,
         **kwargs,
     ):
@@ -81,6 +82,7 @@ class NHPPModel(ABC):
             reltol=reltol,
             abstol=abstol,
             trace=trace,
+            verbose=verbose,
             printsteps=printsteps,
             **kwargs,
         )

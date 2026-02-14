@@ -4,6 +4,11 @@ from dataclasses import dataclass
 import warnings
 import numpy as np
 
+try:
+    from tqdm.auto import tqdm as _tqdm
+except Exception:  # pragma: no cover - optional dependency
+    _tqdm = None
+
 from .data import NHPPData
 from .base import NHPPModel
 
@@ -37,6 +42,7 @@ def emfit_internal(
     reltol: float = 1.0e-6,
     abstol: float = 1.0e-3,
     trace: bool = False,
+    verbose: bool = False,
     printsteps: int = 50,
     **kwargs,
 ) -> EmFitResult:
@@ -52,6 +58,13 @@ def emfit_internal(
     res1 = res0
     error = np.array([np.inf, np.inf, np.inf], dtype=float)
 
+    pbar = None
+    if verbose:
+        if _tqdm is None:
+            warnings.warn("tqdm is not installed; set verbose=False or install tqdm to see a progress bar.")
+        else:
+            pbar = _tqdm(total=maxiter, desc=f"{model.name} fit", leave=False)
+
     while True:
         step = model.em_step(res0["param"], data, **kwargs)
         res1 = {
@@ -60,6 +73,9 @@ def emfit_internal(
             "pdiff": np.asarray(step.get("pdiff", np.asarray(step["param"], float) - res0["param"]), dtype=float),
         }
         error = _comp_error_llf(res0, res1)
+
+        if pbar is not None:
+            pbar.update(1)
 
         if trace and (iter_ % printsteps == 0):
             print(f"llf={res1['llf']} ({error[2]:.6e}) params=({res1['param']})")
@@ -84,6 +100,11 @@ def emfit_internal(
 
         iter_ += 1
         res0 = res1
+
+    if pbar is not None:
+        pbar.n = min(iter_, maxiter)
+        pbar.refresh()
+        pbar.close()
 
     model.set_data(data)
     return EmFitResult(
