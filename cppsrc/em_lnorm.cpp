@@ -5,28 +5,9 @@
 #include <limits>
 #include <stdexcept>
 
+#include "norm.h"
+
 namespace py = pybind11;
-
-namespace detail {
-
-constexpr double kSqrt2 = 1.41421356237309504880168872420969807857;
-constexpr double kInvSqrt2Pi = 0.39894228040143267793994605993438186848;
-const double kLogSqrt2Pi = 0.5 * std::log(2.0 * M_PI);
-
-inline double phi(double z) {
-  return kInvSqrt2Pi * std::exp(-0.5 * z * z);
-}
-
-inline double Q(double z) {
-  return 0.5 * std::erfc(z / kSqrt2);
-}
-
-inline double log_norm_pdf(double x, double mu, double sig) {
-  const double z = (x - mu) / sig;
-  return -std::log(sig) - kLogSqrt2Pi - 0.5 * z * z;
-}
-
-} // namespace detail
 
 py::dict em_lnorm_emstep(
   py::array_t<double, py::array::c_style | py::array::forcecast> params,
@@ -90,13 +71,13 @@ py::dict em_lnorm_emstep(
   double en3 = 0.0;
   double llf = 0.0;
 
-  double tmp_pdf = detail::phi(y);
+  double tmp_pdf = norm_phi(y);
 
   double g00 = 1.0;
   double g01 = mu;
   double g02 = sig * sig + mu * mu;
 
-  double g10 = detail::Q(y);
+  double g10 = norm_Q(y);
   double g11 = sig * tmp_pdf + mu * g10;
   double g12 = (sig * logt + mu * sig) * tmp_pdf + (sig * sig + mu * mu) * g10;
 
@@ -119,7 +100,7 @@ py::dict em_lnorm_emstep(
     en1 += 1.0;
     en2 += logt;
     en3 += logt * logt;
-    llf += detail::log_norm_pdf(logt, mu, sig) - logt;
+    llf += norm_logpdf(logt, mu, sig) - logt;
   }
 
   for (int j = 1; j < dsize; j++) {
@@ -133,13 +114,13 @@ py::dict em_lnorm_emstep(
 
       logt = std::log(t);
       y = (logt - mu) / sig;
-      tmp_pdf = detail::phi(y);
+      tmp_pdf = norm_phi(y);
 
       g00 = g10;
       g01 = g11;
       g02 = g12;
 
-      g10 = detail::Q(y);
+      g10 = norm_Q(y);
       g11 = sig * tmp_pdf + mu * g10;
       g12 = (sig * logt + mu * sig) * tmp_pdf + (sig * sig + mu * mu) * g10;
     }
@@ -163,7 +144,7 @@ py::dict em_lnorm_emstep(
       en1 += 1.0;
       en2 += logt;
       en3 += logt * logt;
-      llf += detail::log_norm_pdf(logt, mu, sig) - logt;
+      llf += norm_logpdf(logt, mu, sig) - logt;
     }
   }
 

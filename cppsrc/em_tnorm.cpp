@@ -5,39 +5,29 @@
 #include <stdexcept>
 #include <limits>
 
+#include "norm.h"
+
 namespace py = pybind11;
 
 namespace tnorm {
 
-constexpr double kSqrt2 = 1.4142135623730950488016887242096980785696718753769;
-constexpr double kInvSqrt2Pi = 0.3989422804014326779399460599343818684758586311649;
-
-inline double phi(double z) {
-    return kInvSqrt2Pi * std::exp(-0.5 * z * z);
-}
-
-inline double Q(double z) {
-    return 0.5 * std::erfc(z / kSqrt2);
-}
-
 inline double func_barFi(double t, double mu, double sig) {
     const double z = (t - mu) / sig;
-    return Q(z);
+    return norm_Q(z);
 }
 
 inline double func_barPhi1i(double t, double mu, double sig) {
     const double z = (t - mu) / sig;
-    return sig * phi(z) + mu * Q(z);
+    return sig * norm_phi(z) + mu * norm_Q(z);
 }
 
 inline double func_barPhi2i(double t, double mu, double sig) {
     const double z = (t - mu) / sig;
-    return (sig * t + sig * mu) * phi(z) + (sig * sig + mu * mu) * Q(z);
+    return (sig * t + sig * mu) * norm_phi(z) + (sig * sig + mu * mu) * norm_Q(z);
 }
 
 inline double log_norm_pdf(double t, double mu, double sig) {
-    const double z = (t - mu) / sig;
-    return -std::log(sig) - 0.5 * std::log(2.0 * M_PI) - 0.5 * z * z;
+    return norm_logpdf(t, mu, sig);
 }
 
 } // namespace tnorm

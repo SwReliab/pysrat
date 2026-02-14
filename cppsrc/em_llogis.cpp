@@ -5,41 +5,9 @@
 #include <limits>
 #include <stdexcept>
 
+#include "logistic.h"
+
 namespace py = pybind11;
-
-namespace detail {
-
-inline double logistic_cdf(double x, double loc, double scale) {
-  const double z = (x - loc) / scale;
-  if (z >= 0.0) {
-    const double ez = std::exp(-z);
-    return 1.0 / (1.0 + ez);
-  }
-  const double ez = std::exp(z);
-  return ez / (1.0 + ez);
-}
-
-inline double logistic_logcdf(double x, double loc, double scale) {
-  const double z = (x - loc) / scale;
-  if (z >= 0.0) {
-    return -std::log1p(std::exp(-z));
-  }
-  return z - std::log1p(std::exp(z));
-}
-
-inline double logistic_logsf(double x, double loc, double scale) {
-  const double z = (x - loc) / scale;
-  if (z >= 0.0) {
-    return -z - std::log1p(std::exp(-z));
-  }
-  return -std::log1p(std::exp(z));
-}
-
-inline double logistic_logpdf(double x, double loc, double scale) {
-  return -std::log(scale) + logistic_logcdf(x, loc, scale) + logistic_logsf(x, loc, scale);
-}
-
-} // namespace detail
 
 py::dict em_llogis_emstep(
   py::array_t<double, py::array::c_style | py::array::forcecast> params,
@@ -127,7 +95,7 @@ py::dict em_llogis_emstep(
     en1 += 1.0;
     en2 += 1.0 / (1.0 + y);
     en3 += (y - 1.0) * std::log(y) / (1.0 + y);
-    llf += detail::logistic_logpdf(logt, loc, scale) - logt;
+    llf += logistic_logpdf(logt, loc, scale) - logt;
   }
 
   for (int j = 1; j < dsize; j++) {
@@ -169,7 +137,7 @@ py::dict em_llogis_emstep(
       en1 += 1.0;
       en2 += 1.0 / (1.0 + y);
       en3 += (y - 1.0) * std::log(y) / (1.0 + y);
-      llf += detail::logistic_logpdf(logt, loc, scale) - logt;
+      llf += logistic_logpdf(logt, loc, scale) - logt;
     }
   }
 
@@ -259,7 +227,7 @@ py::dict em_llogis_estep(
       throw std::invalid_argument("Invalid data: cumulative time must be >0 for log-logistic (t>0).");
     }
     const double logt = std::log(t);
-    const double Fi = detail::logistic_cdf(logt, loc, scale);
+    const double Fi = logistic_cdf(logt, loc, scale);
 
     if (num_u(i) != 0.0) {
       nn += num_u(i);
@@ -267,7 +235,7 @@ py::dict em_llogis_estep(
     }
     if (type_u(i) == 1) {
       nn += 1.0;
-      llf += detail::logistic_logpdf(logt, loc, scale) - logt;
+      llf += logistic_logpdf(logt, loc, scale) - logt;
     }
     prev_Fi = Fi;
   }
@@ -331,13 +299,13 @@ double em_llogis_pllf(
       throw std::invalid_argument("Invalid data: cumulative time must be >0 for log-logistic (t>0).");
     }
     const double logt = std::log(t);
-    const double Fi = detail::logistic_cdf(logt, loc, scale);
+    const double Fi = logistic_cdf(logt, loc, scale);
 
     if (num_u(i) != 0.0) {
       llf += num_u(i) * std::log(Fi - prev_Fi);
     }
     if (type_u(i) == 1) {
-      llf += detail::logistic_logpdf(logt, loc, scale);
+      llf += logistic_logpdf(logt, loc, scale);
     }
     prev_Fi = Fi;
   }

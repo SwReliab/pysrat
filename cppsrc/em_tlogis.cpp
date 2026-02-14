@@ -5,51 +5,9 @@
 #include <limits>
 #include <stdexcept>
 
+#include "logistic.h"
+
 namespace py = pybind11;
-
-namespace detail {
-
-inline double logistic_cdf(double x, double loc, double scale) {
-  const double z = (x - loc) / scale;
-  if (z >= 0.0) {
-    const double ez = std::exp(-z);
-    return 1.0 / (1.0 + ez);
-  }
-  const double ez = std::exp(z);
-  return ez / (1.0 + ez);
-}
-
-inline double logistic_sf(double x, double loc, double scale) {
-  const double z = (x - loc) / scale;
-  if (z >= 0.0) {
-    const double ez = std::exp(-z);
-    return ez / (1.0 + ez);
-  }
-  const double ez = std::exp(z);
-  return 1.0 / (1.0 + ez);
-}
-
-inline double logistic_logcdf(double x, double loc, double scale) {
-  const double z = (x - loc) / scale;
-  if (z >= 0.0) {
-    return -std::log1p(std::exp(-z));
-  }
-  return z - std::log1p(std::exp(z));
-}
-
-inline double logistic_logsf(double x, double loc, double scale) {
-  const double z = (x - loc) / scale;
-  if (z >= 0.0) {
-    return -z - std::log1p(std::exp(-z));
-  }
-  return -std::log1p(std::exp(z));
-}
-
-inline double logistic_logpdf(double x, double loc, double scale) {
-  return -std::log(scale) + logistic_logcdf(x, loc, scale) + logistic_logsf(x, loc, scale);
-}
-
-} // namespace detail
 
 namespace tlogis_mo {
 
@@ -162,7 +120,7 @@ py::dict em_tlogis_emstep_mo(
       en1 += 1.0;
       en2 += 1.0 + tlogis_mo::func_h1i(t, p_mo, b);
       en3 += 1.0 + tlogis_mo::func_h2i(t, p_mo, b);
-      llf += detail::logistic_logpdf(t, loc, scale) - detail::logistic_logsf(0.0, loc, scale);
+      llf += logistic_logpdf(t, loc, scale) - logistic_logsf(0.0, loc, scale);
     }
 
     prev_Fi = Fi;
@@ -246,9 +204,9 @@ py::dict em_tlogis_estep(
   auto num_u = num.unchecked<1>();
   auto type_u = type.unchecked<1>();
 
-  const double F0 = detail::logistic_cdf(0.0, loc, scale);
-  const double barF0 = detail::logistic_sf(0.0, loc, scale);
-  const double log_barF0 = detail::logistic_logsf(0.0, loc, scale);
+  const double F0 = logistic_cdf(0.0, loc, scale);
+  const double barF0 = logistic_sf(0.0, loc, scale);
+  const double log_barF0 = logistic_logsf(0.0, loc, scale);
 
   double nn = 0.0;
   double llf = 0.0;
@@ -258,7 +216,7 @@ py::dict em_tlogis_estep(
 
   for (int i = 0; i < dsize; i++) {
     t += time_u(i);
-    const double Fi = detail::logistic_cdf(t, loc, scale);
+    const double Fi = logistic_cdf(t, loc, scale);
 
     const double x = num_u(i);
     if (x != 0.0) {
@@ -268,7 +226,7 @@ py::dict em_tlogis_estep(
     }
     if (type_u(i) == 1) {
       nn += 1.0;
-      llf += detail::logistic_logpdf(t, loc, scale) - log_barF0;
+      llf += logistic_logpdf(t, loc, scale) - log_barF0;
     }
 
     prev_Fi = Fi;
@@ -327,24 +285,24 @@ double em_tlogis_pllf(
   auto num_u = num.unchecked<1>();
   auto type_u = type.unchecked<1>();
 
-  double llf = w0 * detail::logistic_logcdf(0.0, loc, scale);
+  double llf = w0 * logistic_logcdf(0.0, loc, scale);
 
-  double prev = detail::logistic_cdf(0.0, loc, scale);
+  double prev = logistic_cdf(0.0, loc, scale);
   double t = 0.0;
 
   for (int i = 0; i < dsize; i++) {
     t += time_u(i);
-    const double cur = detail::logistic_cdf(t, loc, scale);
+    const double cur = logistic_cdf(t, loc, scale);
 
     if (num_u(i) != 0.0) {
       llf += num_u(i) * std::log(cur - prev);
     }
     if (type_u(i) == 1) {
-      llf += detail::logistic_logpdf(t, loc, scale);
+      llf += logistic_logpdf(t, loc, scale);
     }
     prev = cur;
   }
 
-  llf += w1 * detail::logistic_logsf(t, loc, scale);
+  llf += w1 * logistic_logsf(t, loc, scale);
   return llf;
 }

@@ -13,6 +13,8 @@ add_library(srat_core STATIC
   csrc/numlib.c
   csrc/inv_log_psi.c
   csrc/gauss_inte.c
+  csrc/logistic.c
+  csrc/norm.c
 )
 target_include_directories(srat_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/csrc)
 
