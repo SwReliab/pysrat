@@ -12,7 +12,7 @@ def _as_float_array(x):
 
 
 def _dist(min: bool, loclog: float, scalelog: float):
-    return gumbel_l(loc=loclog, scale=scalelog) if min else gumbel_r(loc=loclog, scale=scalelog)
+    return gumbel_l(loc=-loclog, scale=scalelog) if min else gumbel_r(loc=loclog, scale=scalelog)
 
 
 def dlgumbel(x, loclog: float = 0.0, scalelog: float = 1.0, log: bool = False, min: bool = False):
