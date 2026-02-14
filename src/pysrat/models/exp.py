@@ -46,4 +46,3 @@ class ExponentialNHPP(NHPPModel):
         return self.omega_() * dexp(t, rate=self.rate_(), log=False)
 
 
-ExpSRM = ExponentialNHPP

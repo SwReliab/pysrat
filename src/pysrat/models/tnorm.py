@@ -46,4 +46,3 @@ class TruncatedNormalNHPP(NHPPModel):
 		return self.omega_() * dtnorm(t, mean=self.mu_(), sd=self.sig_(), log=False)
 
 
-TNormSRM = TruncatedNormalNHPP

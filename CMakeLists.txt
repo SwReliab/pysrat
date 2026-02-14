@@ -28,6 +28,11 @@ pybind11_add_module(_core
   cppsrc/em_tlogis.cpp
   cppsrc/em_llogis.cpp
   cppsrc/em_gamma.cpp
+  cppsrc/em_txvmax.cpp
+  cppsrc/gumbel.cpp
+  cppsrc/txvmin.cpp
+  cppsrc/lxvmax.cpp
+  cppsrc/lxvmin.cpp
 )
 target_link_libraries(_core PRIVATE srat_core Python::Python)
 target_include_directories(_core PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/csrc)

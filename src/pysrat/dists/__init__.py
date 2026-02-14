@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from .exp import dexp, pexp, qexp, rexp
+from .gamma import dgamma, pgamma, qgamma, rgamma
 from .gumbel import dgumbel, pgumbel, qgumbel, rgumbel
 from .lgumbel import dlgumbel, plgumbel, qlgumbel, rlgumbel
 from .llogis import dllogis, pllogis, qllogis, rllogis
@@ -16,6 +17,10 @@ __all__ = [
     "pexp",
     "qexp",
     "rexp",
+    "dgamma",
+    "pgamma",
+    "qgamma",
+    "rgamma",
     "dgumbel",
     "pgumbel",
     "qgumbel",

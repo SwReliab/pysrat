@@ -65,6 +65,57 @@ py::dict em_gamma_emstep(
   double eps
 );
 
+py::dict em_txvmax_emstep_mo(
+  py::array_t<double, py::array::c_style | py::array::forcecast> params,
+  py::dict data
+);
+
+py::dict em_txvmax_estep(
+  py::array_t<double, py::array::c_style | py::array::forcecast> params,
+  py::dict data
+);
+
+double em_txvmax_pllf(
+  py::array_t<double, py::array::c_style | py::array::forcecast> params,
+  py::dict data,
+  double w0,
+  double w1
+);
+
+py::dict em_txvmin_estep(
+  py::array_t<double, py::array::c_style | py::array::forcecast> params,
+  py::dict data
+);
+
+double em_txvmin_pllf(
+  py::array_t<double, py::array::c_style | py::array::forcecast> params,
+  py::dict data,
+  double w0,
+  double w1
+);
+
+py::dict em_lxvmax_estep(
+  py::array_t<double, py::array::c_style | py::array::forcecast> params,
+  py::dict data
+);
+
+double em_lxvmax_pllf(
+  py::array_t<double, py::array::c_style | py::array::forcecast> params,
+  py::dict data,
+  double w1
+);
+
+py::dict em_lxvmin_estep(
+  py::array_t<double, py::array::c_style | py::array::forcecast> params,
+  py::dict data
+);
+
+double em_lxvmin_pllf(
+  py::array_t<double, py::array::c_style | py::array::forcecast> params,
+  py::dict data,
+  double w1
+);
+
 double sum_array(py::array_t<double, py::array::c_style | py::array::forcecast> x) {
   auto buf = x.request();
   auto ptr = static_cast<const double*>(buf.ptr);
@@ -165,6 +216,84 @@ PYBIND11_MODULE(_core, m) {
     py::arg("divide") = 15,
     py::arg("eps") = 1.0e-10,
     "EM step for gamma NHPP SRM (returns dict: param/pdiff/llf/total)."
+  );
+
+  m.def(
+    "em_txvmax_emstep_mo",
+    &em_txvmax_emstep_mo,
+    py::arg("params"),
+    py::arg("data"),
+    "EM step (Marshall-Olkin-type) for truncated XVMax SRM (dict: param/pdiff/llf/total)."
+  );
+
+  m.def(
+    "em_txvmax_estep",
+    &em_txvmax_estep,
+    py::arg("params"),
+    py::arg("data"),
+    "E-step for truncated XVMax SRM (dict: llf/omega/w0/w1/total)."
+  );
+
+  m.def(
+    "em_txvmax_pllf",
+    &em_txvmax_pllf,
+    py::arg("params"),
+    py::arg("data"),
+    py::arg("w0"),
+    py::arg("w1"),
+    "Partial log-likelihood for truncated XVMax SRM (params=[loc,scale])."
+  );
+
+  m.def(
+    "em_txvmin_estep",
+    &em_txvmin_estep,
+    py::arg("params"),
+    py::arg("data"),
+    "E-step for truncated XVMin SRM (dict: llf/omega/w0/w1/total)."
+  );
+
+  m.def(
+    "em_txvmin_pllf",
+    &em_txvmin_pllf,
+    py::arg("params"),
+    py::arg("data"),
+    py::arg("w0"),
+    py::arg("w1"),
+    "Partial log-likelihood for truncated XVMin SRM (params=[loc,scale])."
+  );
+
+  m.def(
+    "em_lxvmax_estep",
+    &em_lxvmax_estep,
+    py::arg("params"),
+    py::arg("data"),
+    "E-step for log-XVMax SRM (dict: llf/omega/w1/total)."
+  );
+
+  m.def(
+    "em_lxvmax_pllf",
+    &em_lxvmax_pllf,
+    py::arg("params"),
+    py::arg("data"),
+    py::arg("w1"),
+    "Partial log-likelihood for log-XVMax SRM (params=[loc,scale])."
+  );
+
+  m.def(
+    "em_lxvmin_estep",
+    &em_lxvmin_estep,
+    py::arg("params"),
+    py::arg("data"),
+    "E-step for log-XVMin SRM (dict: llf/omega/w1/total)."
+  );
+
+  m.def(
+    "em_lxvmin_pllf",
+    &em_lxvmin_pllf,
+    py::arg("params"),
+    py::arg("data"),
+    py::arg("w1"),
+    "Partial log-likelihood for log-XVMin SRM (params=[loc,scale])."
   );
 
   m.def(

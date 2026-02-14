@@ -48,4 +48,3 @@ class Pareto2NHPP(NHPPModel):
         return self.omega_() * dpareto2(t, shape=self.shape_(), scale=self.scale_(), log=False)
 
 
-ParetoSRM = Pareto2NHPP
