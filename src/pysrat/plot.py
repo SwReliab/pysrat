@@ -140,9 +140,3 @@ def plot_rate(
 
     ax.legend()
     return ax
-
-
-# R-compatible aliases (optional)
-mvfplot = plot_mvf
-dmvfplot = plot_dmvf
-rateplot = plot_rate
