@@ -20,10 +20,7 @@ class TruncatedNormalNHPP(NHPPModel):
 		return ["omega", "mu", "sig"]
 
 	def init_params(self, data: NHPPData) -> np.ndarray:
-		omega0 = data.total
-		mu0 = data.mean
-		sig0 = max(1e-12, data.mean * 0.5)
-		return np.array([omega0, mu0, sig0], dtype=float)
+		return np.array([1.0, 0.0, data.mean], dtype=float)
 
 	def em_step(self, params: np.ndarray, data: NHPPData, **kwargs) -> dict:
 		return _core.em_tnorm_emstep(np.asarray(params, dtype=float), data.to_core_dict())
