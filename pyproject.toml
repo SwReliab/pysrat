@@ -22,6 +22,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
   "pytest>=7",
+  "pandas>=2.0",
   "build",
   "twine",
 ]
@@ -29,5 +30,7 @@ dev = [
 [tool.scikit-build]
 cmake.minimum-version = "3.18"
 wheel.packages = ["src/pysrat"]
-# 生成物(.so/.pyd)をPythonパッケージ配下に置く
+# Install generated extensions under the Python package directory
 wheel.install-dir = "."
+wheel.include = ["src/pysrat/datasets/**"]
+sdist.include = ["src/pysrat/datasets/**"]
