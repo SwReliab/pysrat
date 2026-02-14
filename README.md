@@ -58,6 +58,8 @@ fitted, best = compare([ExponentialNHPP()], data, criterion="AIC")
 - `plot_dmvf(data, model_or_results)`
 - `plot_rate(data, model_or_results)`
 
+Note: Only the `plot_*` functions above are exported; legacy aliases like `mvfplot`, `dmvfplot`, and `rateplot` are not provided.
+
 `model_or_results` can be an `NHPPModel`, a `dict[str, NHPPModel]`, or a list of models.
 
 ### Hyperparameters
