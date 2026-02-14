@@ -91,6 +91,3 @@ class NHPPData:
             body += "\n..."
         meta = f"\nlen={self.len}, total={self.total}, mean={self.mean:g}, max={self.max:g}"
         return head + "time\tfault\ttype\n" + body + meta
-
-
-FaultData = NHPPData

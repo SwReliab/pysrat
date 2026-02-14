@@ -1,6 +1,6 @@
 from ._version import __version__
 from ._core import em_exp_emstep, sum  # noqa: F401
-from .data import NHPPData, FaultData  # noqa: F401
+from .data import NHPPData  # noqa: F401
 from .base import NHPPModel  # noqa: F401
 from .models.exp import ExponentialNHPP  # noqa: F401
 from .models.pareto2 import Pareto2NHPP  # noqa: F401
@@ -15,7 +15,3 @@ from .models.lxvmin import LogExtremeValueMinNHPP  # noqa: F401
 from .fit import compare  # noqa: F401
 from .options import nhpp_options  # noqa: F401
 from .plot import plot_mvf, plot_dmvf, plot_rate  # noqa: F401
-
-# backward-compatible alias (deprecated)
-# backward-compatible aliases (deprecated)
-faultdata = NHPPData.from_intervals
