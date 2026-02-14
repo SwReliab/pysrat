@@ -4,10 +4,6 @@
 #include <cmath>
 #include <stdexcept>
 
-extern "C" {
-#include "srat_core.h"
-}
-
 namespace py = pybind11;
 
 namespace expsrm {

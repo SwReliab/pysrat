@@ -7,9 +7,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 find_package(Python COMPONENTS Interpreter Development REQUIRED)
 find_package(pybind11 CONFIG REQUIRED)
 
-# Cコア（例として同梱）
+# C core (bundled for convenience)
 add_library(srat_core STATIC
-  csrc/srat_core.c
   csrc/numlib.c
   csrc/inv_log_psi.c
   csrc/gauss_inte.c
@@ -18,7 +17,7 @@ add_library(srat_core STATIC
 )
 target_include_directories(srat_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/csrc)
 
-# Python拡張モジュール
+# Python extension module
 pybind11_add_module(_core
   src/bindings.cpp
   cppsrc/em_exp.cpp
