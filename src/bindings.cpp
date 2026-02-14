@@ -15,6 +15,11 @@ py::dict em_tnorm_emstep(
   py::dict data
 );
 
+py::dict em_pareto_emstep(
+  py::array_t<double, py::array::c_style | py::array::forcecast> params,
+  py::dict data
+);
+
 double sum_array(py::array_t<double, py::array::c_style | py::array::forcecast> x) {
   auto buf = x.request();
   auto ptr = static_cast<const double*>(buf.ptr);
@@ -38,6 +43,14 @@ PYBIND11_MODULE(_core, m) {
     py::arg("params"),
     py::arg("data"),
     "EM step for truncated normal NHPP SRM (returns dict: param/pdiff/llf/total)."
+  );
+
+  m.def(
+    "em_pareto_emstep",
+    &em_pareto_emstep,
+    py::arg("params"),
+    py::arg("data"),
+    "EM step for Pareto(type2/Lomax) NHPP SRM (returns dict: param/pdiff/llf/total)."
   );
 
   m.def(
