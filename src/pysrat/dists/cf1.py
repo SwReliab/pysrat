@@ -5,7 +5,6 @@ from scipy.special import gammaln
 
 from .. import marlib_cf1 as _cf1
 from ..data import NHPPData
-from ..models.cf1 import CanonicalPhaseTypeNHPP
 
 __all__ = [
     "dcf1",
@@ -30,13 +29,16 @@ def _restore_order(values: np.ndarray, order: np.ndarray) -> np.ndarray:
 
 
 def dcf1(x, alpha=1.0, rate=1.0, log: bool = False, eps: float = 1.0e-8, unif_factor: float = 1.01):
-    x = _as_float_array(x)
-    if x.size == 0:
-        return x
-    s = np.argsort(x)
-    dx = np.diff(np.concatenate([[0.0], x[s]]))
+    x_arr = np.atleast_1d(_as_float_array(x))
+    if x_arr.size == 0:
+        return x_arr
+    s = np.argsort(x_arr)
+    dx = np.diff(np.concatenate([[0.0], x_arr[s]]))
     res = _cf1.cf1pdf(dx, _as_float_array(alpha), _as_float_array(rate), eps, unif_factor, log)
-    return _restore_order(np.asarray(res, dtype=float), s)
+    out = _restore_order(np.asarray(res, dtype=float), s)
+    if np.ndim(x) == 0:
+        return float(out[0])
+    return out
 
 
 def pcf1(
@@ -48,13 +50,16 @@ def pcf1(
     eps: float = 1.0e-8,
     unif_factor: float = 1.01,
 ):
-    q = _as_float_array(q)
-    if q.size == 0:
-        return q
-    s = np.argsort(q)
-    dx = np.diff(np.concatenate([[0.0], q[s]]))
+    q_arr = np.atleast_1d(_as_float_array(q))
+    if q_arr.size == 0:
+        return q_arr
+    s = np.argsort(q_arr)
+    dx = np.diff(np.concatenate([[0.0], q_arr[s]]))
     res = _cf1.cf1cdf(dx, _as_float_array(alpha), _as_float_array(rate), eps, unif_factor, lower_tail, log_p)
-    return _restore_order(np.asarray(res, dtype=float), s)
+    out = _restore_order(np.asarray(res, dtype=float), s)
+    if np.ndim(q) == 0:
+        return float(out[0])
+    return out
 
 
 def qcf1(p, alpha=1.0, rate=1.0, lower_tail: bool = True, log_p: bool = False):
@@ -117,30 +122,21 @@ def cf1_params_init(
     max_llf = -np.inf
     best = None
 
-    model = CanonicalPhaseTypeNHPP(n)
+    core_data = {
+        "time": np.asarray(data.time, dtype=float),
+        "fault": np.asarray(data.fault, dtype=np.int64),
+        "type": np.asarray(data.type, dtype=np.int64),
+    }
 
     for fn in (cf1_params_power, cf1_params_linear):
         for x in scale_init:
             for s in shape_init:
                 param = {"omega": float(data.total), **fn(n, scale=m * float(x), shape=float(s))}
                 try:
-                    res_param = param
+                    res = {"param": param}
                     for _ in range(int(maxiter_init)):
-                        params_vec = np.concatenate(
-                            [
-                                [float(res_param["omega"])],
-                                np.asarray(res_param["alpha"], dtype=float),
-                                np.asarray(res_param["rate"], dtype=float),
-                            ]
-                        )
-                        step = model.em_step(params_vec, data)
-                        new_params = np.asarray(step["param"], dtype=float)
-                        res_param = {
-                            "omega": float(new_params[0]),
-                            "alpha": np.asarray(new_params[1 : 1 + n], dtype=float),
-                            "rate": np.asarray(new_params[1 + n : 1 + 2 * n], dtype=float),
-                        }
-                    llf = float(step["llf"])
+                        res = _cf1.em_cf1_emstep(res["param"], core_data)
+                    llf = float(res["llf"])
                 except Exception:
                     if verbose:
                         print("-", end="")
@@ -149,7 +145,7 @@ def cf1_params_init(
                 if np.isfinite(llf):
                     if llf > max_llf:
                         max_llf = llf
-                        best = res_param
+                        best = res["param"]
                         if verbose:
                             print("o", end="")
                     else:
@@ -176,15 +172,20 @@ def cf1llf(data: NHPPData, omega: float, alpha, rate) -> float:
     if tt.size != 0:
         llf += np.sum(np.log(omega * dcf1(np.cumsum(tt), alpha=alpha, rate=rate)))
 
-    gt = np.asarray(data.time, dtype=float)[np.asarray(data.type, dtype=int) == 0]
+    type_mask = np.asarray(data.type, dtype=int) == 0
+    gt = np.asarray(data.time, dtype=float)[type_mask]
     if gt.size != 0:
-        barp = -np.diff(pcf1(np.concatenate([[0.0], np.cumsum(gt)]),
-                             alpha=alpha,
-                             rate=rate,
-                             lower_tail=False))
-        faults = np.asarray(data.fault, dtype=float)
-        i = faults != 0
+        barp = -np.diff(
+            pcf1(
+                np.concatenate([[0.0], np.cumsum(gt)]),
+                alpha=alpha,
+                rate=rate,
+                lower_tail=False,
+            )
+        )
+        faults0 = np.asarray(data.fault, dtype=float)[type_mask]
+        i = faults0 != 0
         if np.any(i):
-            llf += np.sum(faults[i] * np.log(omega * barp[i]) - gammaln(faults[i] + 1.0))
+            llf += np.sum(faults0[i] * np.log(omega * barp[i]) - gammaln(faults0[i] + 1.0))
 
     return float(llf)
