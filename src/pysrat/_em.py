@@ -44,8 +44,12 @@ def emfit_internal(
     trace: bool = False,
     verbose: bool = False,
     printsteps: int = 50,
+    debug_dir: str | None = None,
+    strict: bool = False,
     **kwargs,
 ) -> EmFitResult:
+    import json
+    import os
     if initialize:
         init = model.init_params(data)
         model._set_fitted_params(np.asarray(init, dtype=float))
@@ -58,6 +62,20 @@ def emfit_internal(
     res1 = res0
     error = np.array([np.inf, np.inf, np.inf], dtype=float)
 
+    def _dump_state(tag: str, param, llf_val):
+        if debug_dir is None:
+            return
+        os.makedirs(debug_dir, exist_ok=True)
+        path = os.path.join(debug_dir, f"{model.name}_{tag}.json")
+        payload = {
+            "tag": tag,
+            "param": np.asarray(param, dtype=float).tolist(),
+            "llf": float(llf_val),
+            "initial_param": initial_param.tolist(),
+        }
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(payload, f, indent=2)
+
     pbar = None
     if verbose:
         if _tqdm is None:
@@ -66,12 +84,38 @@ def emfit_internal(
             pbar = _tqdm(total=maxiter, desc=f"{model.name} fit", leave=False)
 
     while True:
-        step = model.em_step(res0["param"], data, **kwargs)
+        try:
+            step = model.em_step(res0["param"], data, **kwargs)
+        except Exception as exc:
+            _dump_state(f"exception_iter{iter_}", res0["param"], res0["llf"])
+            if strict:
+                raise
+            warnings.warn(f"Exception in EM step: {exc}")
+            break
+
+        new_param = np.asarray(step["param"], dtype=float)
+        new_llf = float(step["llf"])
+
         res1 = {
-            "param": np.asarray(step["param"], dtype=float),
-            "llf": float(step["llf"]),
-            "pdiff": np.asarray(step.get("pdiff", np.asarray(step["param"], float) - res0["param"]), dtype=float),
+            "param": new_param,
+            "llf": new_llf,
+            "pdiff": np.asarray(step.get("pdiff", new_param - res0["param"]), dtype=float),
         }
+
+        if not np.all(np.isfinite(new_param)):
+            _dump_state(f"param_nan_iter{iter_}", new_param, new_llf)
+            if strict:
+                raise FloatingPointError("Non-finite parameter in EM")
+            warnings.warn(f"Non-finite parameter detected at iter {iter_}")
+            break
+
+        if not np.isfinite(new_llf):
+            _dump_state(f"llf_nan_iter{iter_}", new_param, new_llf)
+            if strict:
+                raise FloatingPointError("LLF became NaN/Inf")
+            warnings.warn(f"LLF becomes NaN/Inf at iter {iter_}")
+            break
+
         error = _comp_error_llf(res0, res1)
 
         if pbar is not None:
@@ -79,11 +123,6 @@ def emfit_internal(
 
         if trace and (iter_ % printsteps == 0):
             print(f"llf={res1['llf']} ({error[2]:.6e}) params=({res1['param']})")
-
-        if not np.isfinite(res1["llf"]):
-            warnings.warn(f"LLF becomes +-Inf, NaN or NA: {model.name} {iter_}")
-            res1 = res0
-            break
 
         if error[2] < 0:
             warnings.warn(f"LLF decreases: {model.name} {iter_} {error[2]:.6e}")

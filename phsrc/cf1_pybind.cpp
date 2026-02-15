@@ -147,12 +147,12 @@ cf1pdf(py::array_t<double, py::array::c_style | py::array::forcecast> dx,
 // -----------------------------
 py::array_t<double>
 cf1cdf(py::array_t<double, py::array::c_style | py::array::forcecast> dx,
-       py::array_t<double, py::array::c_style | py::array::forcecast> alpha,
-       py::array_t<double, py::array::c_style | py::array::forcecast> rate,
-       double eps = 1.0e-8,
-       double ufactor = 1.01,
-       bool lower = true,
-       bool log = false) {
+  py::array_t<double, py::array::c_style | py::array::forcecast> alpha,
+  py::array_t<double, py::array::c_style | py::array::forcecast> rate,
+  double eps = 1.0e-8,
+  double ufactor = 1.01,
+  bool lower = true,
+  bool log = false) {
 
   auto dxs = as_span_const_1d(dx);
   auto as  = as_span_const_1d(alpha);
@@ -167,46 +167,62 @@ cf1cdf(py::array_t<double, py::array::c_style | py::array::forcecast> dx,
 
   const double tmax = dxs[static_cast<size_t>(idamax(dxs))];
 
-  std::vector<double> P(rs.begin(), rs.end());
+  // Copy alpha and rate to vectors
+  std::vector<double> alpha_vec(n + 1, 0.0);
+  std::copy(as.begin(), as.end(), alpha_vec.begin());
+  {
+    double asum = 0.0;
+    for (double v : as) asum += v;
+    const double rem = 1.0 - asum;
+    alpha_vec[static_cast<size_t>(n)] = rem > 0.0 ? rem : 0.0;
+  }
+  std::vector<double> P(n + 1, 0.0);
+  std::copy(rs.begin(), rs.end(), P.begin());
   const double qv = unif(cf1_matrix{}, std::span<double>(P), ufactor);
 
   const int prob_len = rightbound(qv * tmax, eps) + 1;
   std::vector<double> prob(static_cast<size_t>(prob_len));
 
-  std::vector<double> tmp(as.begin(), as.end());
-  std::vector<double> xi(static_cast<size_t>(n));
+  std::vector<double> tmp(alpha_vec.begin(), alpha_vec.end());
+  std::vector<double> xi(static_cast<size_t>(n + 1));
 
   py::array_t<double> out = make_double_array(dxs.size());
   auto outs = as_span_mut_1d(out);
 
-  for (int i = 0; i < k; ++i) {
-    const double t = dxs[static_cast<size_t>(i)];
-    const int right = rightbound(qv * t, eps);
-    const double weight = pmf(qv * t, 0, right, std::span<double>(prob));
+  if (lower) {
+    for (int i = 0; i < k; ++i) {
+      const double t = dxs[static_cast<size_t>(i)];
+      const int right = rightbound(qv * t, eps);
+      const double weight = pmf(qv * t, 0, right, std::span<double>(prob));
 
-    mexpv(cf1_matrix{}, trans{},
-          std::span<const double>(P),
-          std::span<const double>(prob.data(), prob.size()),
-          right, weight,
-          std::span<const double>(tmp),
-          std::span<double>(tmp),
-          std::span<double>(xi));
+      mexpv(cf1_matrix{}, trans{},
+            std::span<const double>(P),
+            std::span<const double>(prob.data(), prob.size()),
+            right, weight,
+            std::span<const double>(tmp),
+            std::span<double>(tmp),
+            std::span<double>(xi));
+      outs[static_cast<size_t>(i)] = tmp[static_cast<size_t>(n)];
+    }
+  } else {
+    for (int i = 0; i < k; ++i) {
+      const double t = dxs[static_cast<size_t>(i)];
+      const int right = rightbound(qv * t, eps);
+      const double weight = pmf(qv * t, 0, right, std::span<double>(prob));
 
-    outs[static_cast<size_t>(i)] = dasum(std::span<const double>(tmp));
+      mexpv(cf1_matrix{}, trans{},
+            std::span<const double>(P),
+            std::span<const double>(prob.data(), prob.size()),
+            right, weight,
+            std::span<const double>(tmp),
+            std::span<double>(tmp),
+            std::span<double>(xi));
+      outs[static_cast<size_t>(i)] = dasum(std::span<const double>(tmp.data(), n));
+    }
   }
 
-  // Match original Rcpp behavior:
-  //   result = dasum(tmp)
-  //   if lower==true => 1-result
-  //   if log==true => log(...)
-  if (!lower && !log) {
-    // keep outs
-  } else if (lower && !log) {
-    for (size_t i = 0; i < outs.size(); ++i) outs[i] = 1.0 - outs[i];
-  } else if (!lower && log) {
+  if (log) {
     for (size_t i = 0; i < outs.size(); ++i) outs[i] = std::log(outs[i]);
-  } else { // lower && log
-    for (size_t i = 0; i < outs.size(); ++i) outs[i] = std::log(1.0 - outs[i]);
   }
 
   return out;

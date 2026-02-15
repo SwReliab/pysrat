@@ -12,6 +12,7 @@ class NHPPData:
     total: int
     mean: float
     max: float
+    kind: str
 
     @property
     def len(self) -> int:
@@ -73,15 +74,34 @@ class NHPPData:
             total=total,
             mean=mean,
             max=maxv,
+            kind="intervals",
         )
 
     @classmethod
     def from_counts(cls, fault, *, type=None) -> "NHPPData":
-        return cls.from_intervals(time=None, fault=fault, type=type, te=None)
+        data = cls.from_intervals(time=None, fault=fault, type=type, te=None)
+        return cls(
+            time=data.time,
+            fault=data.fault,
+            type=data.type,
+            total=data.total,
+            mean=data.mean,
+            max=data.max,
+            kind="counts",
+        )
 
     @classmethod
     def from_fault_times(cls, times, *, te) -> "NHPPData":
-        return cls.from_intervals(time=times, fault=None, type=None, te=te)
+        data = cls.from_intervals(time=times, fault=None, type=None, te=te)
+        return cls(
+            time=data.time,
+            fault=data.fault,
+            type=data.type,
+            total=data.total,
+            mean=data.mean,
+            max=data.max,
+            kind="fault_times",
+        )
 
     def __repr__(self) -> str:
         cols = np.vstack([self.time, self.fault, self.type]).T

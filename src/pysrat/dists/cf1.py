@@ -160,32 +160,73 @@ def cf1_params_init(
     return best
 
 
+# def cf1llf(data: NHPPData, omega: float, alpha, rate) -> float:
+#     omega = float(omega)
+#     alpha = _as_float_array(alpha)
+#     rate = _as_float_array(rate)
+
+#     te = float(np.sum(data.time))
+#     llf = -omega * float(pcf1(te, alpha=alpha, rate=rate, lower_tail=True))
+
+#     tt = np.asarray(data.time, dtype=float)[np.asarray(data.type, dtype=int) == 1]
+#     if tt.size != 0:
+#         llf += np.sum(np.log(omega * dcf1(np.cumsum(tt), alpha=alpha, rate=rate)))
+
+#     type_mask = np.asarray(data.type, dtype=int) == 0
+#     gt = np.asarray(data.time, dtype=float)[type_mask]
+#     if gt.size != 0:
+#         barp = -np.diff(
+#             pcf1(
+#                 np.concatenate([[0.0], np.cumsum(gt)]),
+#                 alpha=alpha,
+#                 rate=rate,
+#                 lower_tail=False,
+#             )
+#         )
+#         faults0 = np.asarray(data.fault, dtype=float)[type_mask]
+#         i = faults0 != 0
+#         if np.any(i):
+#             llf += np.sum(faults0[i] * np.log(omega * barp[i]) - gammaln(faults0[i] + 1.0))
+
+#     return float(llf)
+
 def cf1llf(data: NHPPData, omega: float, alpha, rate) -> float:
     omega = float(omega)
+    if not np.isfinite(omega) or omega <= 0.0:
+        return -np.inf
+
     alpha = _as_float_array(alpha)
     rate = _as_float_array(rate)
 
     te = float(np.sum(data.time))
     llf = -omega * float(pcf1(te, alpha=alpha, rate=rate, lower_tail=True))
 
+    # type==1 部分（連続/発生時刻の寄与）
     tt = np.asarray(data.time, dtype=float)[np.asarray(data.type, dtype=int) == 1]
     if tt.size != 0:
-        llf += np.sum(np.log(omega * dcf1(np.cumsum(tt), alpha=alpha, rate=rate)))
+        dens = np.asarray(dcf1(np.cumsum(tt), alpha=alpha, rate=rate), dtype=float)
+        x = omega * dens
+        if np.any(x <= 0) or not np.all(np.isfinite(x)):
+            return -np.inf
+        llf += float(np.sum(np.log(x)))
 
+    # type==0 部分（グループ寄与）
     type_mask = np.asarray(data.type, dtype=int) == 0
     gt = np.asarray(data.time, dtype=float)[type_mask]
     if gt.size != 0:
-        barp = -np.diff(
-            pcf1(
-                np.concatenate([[0.0], np.cumsum(gt)]),
-                alpha=alpha,
-                rate=rate,
-                lower_tail=False,
-            )
-        )
+        tgrid = np.concatenate([[0.0], np.cumsum(gt)])
+        S = np.asarray(pcf1(tgrid, alpha=alpha, rate=rate, lower_tail=False), dtype=float)
+
+        # 単調性補正（任意だが効く）
+        S = np.minimum.accumulate(S)
+
+        barp = -np.diff(S)
         faults0 = np.asarray(data.fault, dtype=float)[type_mask]
-        i = faults0 != 0
-        if np.any(i):
-            llf += np.sum(faults0[i] * np.log(omega * barp[i]) - gammaln(faults0[i] + 1.0))
+        idx = faults0 != 0
+        if np.any(idx):
+            x = omega * barp[idx]
+            if np.any(x <= 0) or not np.all(np.isfinite(x)):
+                return -np.inf
+            llf += float(np.sum(faults0[idx] * np.log(x) - gammaln(faults0[idx] + 1.0)))
 
     return float(llf)
