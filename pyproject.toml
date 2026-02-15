@@ -8,11 +8,11 @@ build-backend = "scikit_build_core.build"
 [project]
 name = "pysrat"
 version = "0.1.0"
-description = "Python bindings for SRAT (Software Reliability Assessment Tools) core."
+description = "Python package for software reliability analysis and modeling"
 readme = "README.md"
 requires-python = ">=3.9"
 license = { file = "LICENSE" }
-authors = [{ name = "Your Name" }]
+authors = [{ name = "Hiroyuki Okamura", email = "okamu@hiroshima-u.ac.jp" }]
 dependencies = [
   "numpy>=1.23",
   "scipy>=1.9",
