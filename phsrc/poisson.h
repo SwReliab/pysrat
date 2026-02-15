@@ -6,6 +6,7 @@
 #pragma once
 
 #include <vector>
+#include <span>
 #include <cmath>
 #include <cassert>
 #include <algorithm>
@@ -82,6 +83,58 @@ inline double pmf(double lambda, int left, int right, std::vector<double>& prob)
   for (int i = 0; i < n; ++i) {
     const double w = std::exp(logp[i] - max_logp);
     prob[i] = w;
+    weight += w;
+  }
+
+  return weight;
+}
+
+/**
+ * @brief Compute poisson probability vector (unnormalized weights) into a span
+ *
+ * prob[0..(right-left)] is filled.
+ *
+ * @param lambda Poisson parameter (> = 0)
+ * @param left left bound (>= 0)
+ * @param right right bound (>= left)
+ * @param prob output weights sized at least (right-left+1)
+ * @return weight normalization constant
+ */
+inline double pmf(double lambda, int left, int right, std::span<double> prob) {
+  assert(lambda >= 0.0);
+  assert(left >= 0);
+  assert(right >= left);
+
+  const int n = right - left + 1;
+  assert(prob.size() >= static_cast<size_t>(n));
+
+  // Special case: lambda == 0 => P(X=0)=1 else 0
+  if (std::fpclassify(lambda) == FP_ZERO) {
+    double weight = 0.0;
+    for (int i = 0; i < n; ++i) {
+      const int k = left + i;
+      const double v = (k == 0) ? 1.0 : 0.0;
+      prob[static_cast<size_t>(i)] = v;
+      weight += v;
+    }
+    return weight;
+  }
+
+  const double loglam = std::log(lambda);
+  std::vector<double> logp(static_cast<size_t>(n));
+  double max_logp = -INFINITY;
+
+  for (int i = 0; i < n; ++i) {
+    const int k = left + i;
+    const double lp = k * loglam - lambda - std::lgamma(static_cast<double>(k) + 1.0);
+    logp[static_cast<size_t>(i)] = lp;
+    if (lp > max_logp) max_logp = lp;
+  }
+
+  double weight = 0.0;
+  for (int i = 0; i < n; ++i) {
+    const double w = std::exp(logp[static_cast<size_t>(i)] - max_logp);
+    prob[static_cast<size_t>(i)] = w;
     weight += w;
   }
 

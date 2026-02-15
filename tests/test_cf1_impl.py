@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 
 
-marlib_cf1 = pytest.importorskip("marlib_cf1")
+marlib_cf1 = pytest.importorskip("pysrat.marlib_cf1")
 
 
 def _params():

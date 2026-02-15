@@ -3,6 +3,7 @@
 #include <span>
 #include <cassert>
 #include <cstddef>
+#include <algorithm>
 
 namespace marlib {
 
@@ -10,6 +11,21 @@ struct trans {};
 struct notrans {};
 
 struct cf1_matrix {}; // coefficient vector A of length n
+
+// -------------------------------------------------
+// uniformization helper
+//   qv = ufactor * max(A)
+//   A[i] <- A[i] / qv
+// -------------------------------------------------
+inline double unif(cf1_matrix, std::span<double> A, double ufactor) {
+  assert(!A.empty());
+  const auto vmax_it = std::max_element(A.begin(), A.end());
+  const double vmax = (vmax_it != A.end()) ? *vmax_it : 0.0;
+  if (vmax <= 0.0) return 0.0;
+  const double qv = vmax * ufactor;
+  for (double& v : A) v /= qv;
+  return qv;
+}
 
 // -------------------------------------------------
 // dgemv for cf1_matrix

@@ -37,6 +37,9 @@ from pysrat.dists import (
     plgumbel,
     qlgumbel,
     rlgumbel,
+    dcf1,
+    pcf1,
+    rcf1,
 )
 
 
@@ -192,3 +195,26 @@ def test_lgumbel_distribution_min_max():
 
     r = rlgumbel(3, loclog=0.0, scalelog=1.0, min=False, rng=np.random.default_rng(0))
     assert r.shape == (3,)
+
+
+def test_cf1_distribution():
+    x = np.array([0.1, 0.5, 1.0])
+    alpha = np.array([0.4, 0.3, 0.2])
+    rate = np.array([0.5, 1.0, 1.5])
+
+    d = dcf1(x, alpha=alpha, rate=rate)
+    assert d.shape == x.shape
+    assert np.all(np.isfinite(d))
+    assert np.all(d >= 0.0)
+
+    p = pcf1(x, alpha=alpha, rate=rate)
+    assert p.shape == x.shape
+    assert np.all(np.isfinite(p))
+    assert np.all((p >= 0.0) & (p <= 1.0))
+
+    p_upper = pcf1(x, alpha=alpha, rate=rate, lower_tail=False)
+    assert np.allclose(p + p_upper, 1.0, atol=1e-10)
+
+    r = rcf1(5, alpha=alpha, rate=rate, scramble=False)
+    assert r.shape == (5,)
+    assert np.all(np.isfinite(r))

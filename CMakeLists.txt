@@ -36,7 +36,21 @@ pybind11_add_module(_core
 target_link_libraries(_core PRIVATE srat_core Python::Python)
 target_include_directories(_core PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/csrc)
 
+# CF1 span backend module (C++20)
+pybind11_add_module(marlib_cf1
+  phsrc/cf1_pybind.cpp
+  phsrc/poisson.cpp
+)
+target_compile_features(marlib_cf1 PRIVATE cxx_std_20)
+target_include_directories(marlib_cf1 PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/phsrc)
+
 install(TARGETS _core
+  LIBRARY DESTINATION pysrat
+  ARCHIVE DESTINATION pysrat
+  RUNTIME DESTINATION pysrat
+)
+
+install(TARGETS marlib_cf1
   LIBRARY DESTINATION pysrat
   ARCHIVE DESTINATION pysrat
   RUNTIME DESTINATION pysrat

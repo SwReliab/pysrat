@@ -30,9 +30,8 @@ dev = [
 ]
 
 [tool.scikit-build]
-cmake.minimum-version = "3.18"
+cmake.version = ">=3.18"
 wheel.packages = ["src/pysrat"]
 # Install generated extensions under the Python package directory
 wheel.install-dir = "."
-wheel.include = ["src/pysrat/datasets/**"]
 sdist.include = ["src/pysrat/datasets/**"]

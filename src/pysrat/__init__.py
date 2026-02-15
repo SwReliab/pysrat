@@ -9,6 +9,7 @@ from .models.lnorm import LogNormalNHPP  # noqa: F401
 from .models.tlogis import TruncatedLogisticNHPP  # noqa: F401
 from .models.llogis import LogLogisticNHPP  # noqa: F401
 from .models.tnorm import TruncatedNormalNHPP  # noqa: F401
+from .models.cf1 import CanonicalPhaseTypeNHPP  # noqa: F401
 from .models.txvmax import TruncatedExtremeValueMaxNHPP  # noqa: F401
 from .models.lxvmax import LogExtremeValueMaxNHPP  # noqa: F401
 from .models.txvmin import TruncatedExtremeValueMinNHPP  # noqa: F401

@@ -52,23 +52,25 @@ using namespace marlib;
 // -----------------------------
 // Span helpers for numpy 1D arrays
 // -----------------------------
+template <int Flags>
 static inline std::span<const double>
- as_span_const_1d(py::array_t<double, py::array::c_style | py::array::forcecast>& a) {
+as_span_const_1d(py::array_t<double, Flags>& a) {
   auto buf = a.request();
   if (buf.ndim != 1) throw std::invalid_argument("expected 1D numpy array (double)");
   return {static_cast<const double*>(buf.ptr), static_cast<size_t>(buf.shape[0])};
 }
 
+template <int Flags>
 static inline std::span<double>
-as_span_mut_1d(py::array_t<double, py::array::c_style | py::array::forcecast>& a) {
+as_span_mut_1d(py::array_t<double, Flags>& a) {
   auto buf = a.request();
   if (buf.ndim != 1) throw std::invalid_argument("expected 1D numpy array (double)");
   return {static_cast<double*>(buf.ptr), static_cast<size_t>(buf.shape[0])};
 }
 
-template <class IntT>
+template <class IntT, int Flags>
 static inline std::span<const IntT>
- as_span_const_1d_int(py::array_t<IntT, py::array::c_style | py::array::forcecast>& a) {
+as_span_const_1d_int(py::array_t<IntT, Flags>& a) {
   auto buf = a.request();
   if (buf.ndim != 1) throw std::invalid_argument("expected 1D numpy array (int)");
   return {static_cast<const IntT*>(buf.ptr), static_cast<size_t>(buf.shape[0])};
