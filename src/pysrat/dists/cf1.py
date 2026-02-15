@@ -201,7 +201,7 @@ def cf1llf(data: NHPPData, omega: float, alpha, rate) -> float:
     te = float(np.sum(data.time))
     llf = -omega * float(pcf1(te, alpha=alpha, rate=rate, lower_tail=True))
 
-    # type==1 部分（連続/発生時刻の寄与）
+    # type==1 contribution (event-time/continuous part)
     tt = np.asarray(data.time, dtype=float)[np.asarray(data.type, dtype=int) == 1]
     if tt.size != 0:
         dens = np.asarray(dcf1(np.cumsum(tt), alpha=alpha, rate=rate), dtype=float)
@@ -210,14 +210,14 @@ def cf1llf(data: NHPPData, omega: float, alpha, rate) -> float:
             return -np.inf
         llf += float(np.sum(np.log(x)))
 
-    # type==0 部分（グループ寄与）
+    # type==0 contribution (grouped part)
     type_mask = np.asarray(data.type, dtype=int) == 0
     gt = np.asarray(data.time, dtype=float)[type_mask]
     if gt.size != 0:
         tgrid = np.concatenate([[0.0], np.cumsum(gt)])
         S = np.asarray(pcf1(tgrid, alpha=alpha, rate=rate, lower_tail=False), dtype=float)
 
-        # 単調性補正（任意だが効く）
+        # Monotonicity correction (optional but useful)
         S = np.minimum.accumulate(S)
 
         barp = -np.diff(S)
