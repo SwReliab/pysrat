@@ -7,6 +7,7 @@ Python implementation of NHPP (non-homogeneous Poisson process) software reliabi
 - Scikit-learn–style estimators: `model.fit(data)` and `params_`/`llf_`/`aic_`
 - NHPP data helpers: `NHPPData.from_intervals(...)`, `from_counts(...)`, `from_fault_times(...)`
 - Fast EM updates in C via pybind11
+- CF1 (canonical phase-type) NHPP model and distribution helpers
 - Simple plotting helpers (`plot_mvf`, `plot_dmvf`, `plot_rate`)
 
 ## Installation
@@ -15,6 +16,9 @@ Python implementation of NHPP (non-homogeneous Poisson process) software reliabi
 python -m pip install -U pip
 pip install -e .
 ```
+
+Notes:
+- A C++20-capable compiler is required to build the CF1 extension module.
 
 ## Quick start
 
@@ -31,6 +35,18 @@ print(model.aic_)
 plot_mvf(data, model)
 ```
 
+CF1 example:
+
+```python
+import numpy as np
+from pysrat import NHPPData
+from pysrat.models.cf1 import CanonicalPhaseTypeNHPP
+
+data = NHPPData.from_intervals(time=[1, 2, 1.5], fault=[1, 0, 2], type=[0, 1, 0])
+model = CanonicalPhaseTypeNHPP(3).fit(data)
+print(model.params_)
+```
+
 ## API overview
 
 ### Data
@@ -41,7 +57,12 @@ plot_mvf(data, model)
 
 ### Models
 
-- `ExponentialNHPP` (NHPP with exponential distribution)
+- `ExponentialNHPP` (exponential)
+- `TruncatedNormalNHPP`, `Pareto2NHPP`, `GammaNHPP`, `LogNormalNHPP`
+- `TruncatedLogisticNHPP`, `LogLogisticNHPP`
+- `TruncatedExtremeValueMaxNHPP`, `LogExtremeValueMaxNHPP`
+- `TruncatedExtremeValueMinNHPP`, `LogExtremeValueMinNHPP`
+- `CanonicalPhaseTypeNHPP` (CF1)
 
 ### Model comparison
 
@@ -50,6 +71,20 @@ from pysrat import compare, ExponentialNHPP, NHPPData
 
 data = NHPPData.from_counts([0, 1, 0, 5])
 fitted, best = compare([ExponentialNHPP()], data, criterion="AIC")
+```
+
+### Distributions
+
+R-like helpers live under `pysrat.dists`, e.g.:
+
+```python
+from pysrat.dists import dcf1, pcf1, rcf1
+
+alpha = [0.4, 0.3, 0.3]
+rate = [0.5, 1.0, 1.5]
+print(dcf1([0.1, 0.5], alpha=alpha, rate=rate))
+print(pcf1([0.1, 0.5], alpha=alpha, rate=rate))
+print(rcf1(5, alpha=alpha, rate=rate))
 ```
 
 ### Plotting
