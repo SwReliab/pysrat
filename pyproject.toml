@@ -7,7 +7,7 @@ build-backend = "scikit_build_core.build"
 
 [project]
 name = "pysrat"
-version = "0.1.0"
+version = "0.1.1"
 description = "Python package for software reliability analysis and modeling"
 readme = "README.md"
 requires-python = ">=3.9"
@@ -32,13 +32,10 @@ dev = [
 [tool.scikit-build]
 cmake.version = ">=3.18"
 wheel.packages = ["src/pysrat"]
-# Install generated extensions under the Python package directory
 wheel.install-dir = "."
 sdist.include = [
   "CMakeLists.txt",
-  "src/bindings.cpp",
-  "src/pysrat/datasets/**",
-  "cppsrc/**",
+  "src/pysrat/**",
+  "src/pysrat/nhpp/datasets/**",
   "csrc/**",
-  "phsrc/**",
 ]
