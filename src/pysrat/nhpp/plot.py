@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 import matplotlib.pyplot as plt
 
-from .data.nhpp import NHPPData
+from .data import NHPPData
 from .base import NHPPModel
 
 

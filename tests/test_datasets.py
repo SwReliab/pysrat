@@ -3,12 +3,12 @@ import importlib.resources as resources
 
 import pandas as pd
 
-from pysrat.data import NHPPData
-from pysrat.models.exp import ExponentialNHPP
+from pysrat.nhpp.data import NHPPData
+from pysrat.nhpp.models.exp import ExponentialNHPP
 
 
 def test_musa_dataset_available():
-    data_path = resources.files("pysrat").joinpath("datasets/musa/ss1a.csv")
+    data_path = resources.files("pysrat").joinpath("nhpp/datasets/musa/ss1a.csv")
     assert data_path.is_file()
 
     with data_path.open("r", newline="") as f:
@@ -21,7 +21,7 @@ def test_musa_dataset_available():
 
 
 def test_musa_ss1a_exp_fit():
-    data_path = resources.files("pysrat").joinpath("datasets/musa/ss1a.csv")
+    data_path = resources.files("pysrat").joinpath("nhpp/datasets/musa/ss1a.csv")
     df = pd.read_csv(data_path)
     data = NHPPData.from_intervals(
         time=df["time"].to_numpy(dtype=float),

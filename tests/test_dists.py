@@ -1,6 +1,6 @@
 import numpy as np
 
-from pysrat.dists import (
+from pysrat.nhpp.dists import (
     dexp,
     pexp,
     qexp,

@@ -3,33 +3,33 @@ from __future__ import annotations
 import numpy as np
 
 from ..base import NHPPModel
-from ..data.nhpp import NHPPData
-from ..dists.tlogis import dtlogis, ptlogis
-from .. import _core
+from ..data import NHPPData
+from ..dists.tgumbel import dtgumbel, ptgumbel
+from ... import _core
 from ._utils import optimize_params
 
 
-class TruncatedLogisticNHPP(NHPPModel):
-    name = "tlogis"
+class TruncatedExtremeValueMaxNHPP(NHPPModel):
+    name = "txvmax"
     df = 3
 
-    def __init__(self, *, omega0: float = 1.0, location0: float = 0.0, scale0: float = 1.0):
-        super().__init__(omega0=float(omega0), location0=float(location0), scale0=float(scale0))
-        self._set_fitted_params(np.array([omega0, location0, scale0], dtype=float))
+    def __init__(self, *, omega0: float = 1.0, loc0: float = 0.0, scale0: float = 1.0):
+        super().__init__(omega0=float(omega0), loc0=float(loc0), scale0=float(scale0))
+        self._set_fitted_params(np.array([omega0, loc0, scale0], dtype=float))
 
     def param_names(self) -> list[str]:
-        return ["omega", "location", "scale"]
+        return ["omega", "loc", "scale"]
 
     def init_params(self, data: NHPPData) -> np.ndarray:
-        return np.array([1.0, 0.0, data.mean], dtype=float)
+        return np.array([1.0, 0.0, data.max / 3.0], dtype=float)
 
     def em_step(self, params: np.ndarray, data: NHPPData, **kwargs) -> dict:
         core = data.to_core_dict()
-        eres = _core.em_tlogis_estep(np.asarray(params, dtype=float), core)
+        eres = _core.em_txvmax_estep(np.asarray(params, dtype=float), core)
         method = kwargs.get("method", "L-BFGS-B")
         options = kwargs.get("options")
         loc_scale = optimize_params(
-            _core.em_tlogis_pllf,
+            _core.em_txvmax_pllf,
             core,
             np.asarray(params[1:3], dtype=float),
             w0=float(eres["w0"]),
@@ -48,7 +48,7 @@ class TruncatedLogisticNHPP(NHPPModel):
     def omega_(self) -> float:
         return float(self.params_[0])
 
-    def location_(self) -> float:
+    def loc_(self) -> float:
         return float(self.params_[1])
 
     def scale_(self) -> float:
@@ -56,10 +56,10 @@ class TruncatedLogisticNHPP(NHPPModel):
 
     def mvf(self, t):
         t = np.asarray(t, dtype=float)
-        return self.omega_() * ptlogis(t, location=self.location_(), scale=self.scale_(), lower_tail=True)
+        return self.omega_() * ptgumbel(t, loc=self.loc_(), scale=self.scale_(), lower_tail=True)
 
     def intensity(self, t):
         t = np.asarray(t, dtype=float)
-        return self.omega_() * dtlogis(t, location=self.location_(), scale=self.scale_(), log=False)
+        return self.omega_() * dtgumbel(t, loc=self.loc_(), scale=self.scale_(), log=False)
 
 

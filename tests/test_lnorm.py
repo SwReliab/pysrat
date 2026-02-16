@@ -1,7 +1,7 @@
 import numpy as np
-from pysrat.data import NHPPData
-from pysrat.dists.lnorm import dlnorm, plnorm, qlnorm, rlnorm
-from pysrat.models.lnorm import LogNormalNHPP
+from pysrat.nhpp.data import NHPPData
+from pysrat.nhpp.dists.lnorm import dlnorm, plnorm, qlnorm, rlnorm
+from pysrat.nhpp.models.lnorm import LogNormalNHPP
 
 
 def test_lnorm_distribution_basic():

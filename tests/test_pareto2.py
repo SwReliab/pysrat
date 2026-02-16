@@ -1,6 +1,6 @@
 import pysrat
-from pysrat.data import NHPPData
-from pysrat.models.pareto2 import Pareto2NHPP
+from pysrat.nhpp.data import NHPPData
+from pysrat.nhpp.models.pareto2 import Pareto2NHPP
 
 
 def test_model_fit_api_pareto2():

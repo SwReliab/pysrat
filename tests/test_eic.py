@@ -2,8 +2,8 @@ import numpy as np
 import pytest
 
 from pysrat import NHPPData
-from pysrat.bootstrap import eic_sample, eic
-from pysrat.models.cf1 import CanonicalPhaseTypeNHPP
+from pysrat.nhpp.bootstrap import eic_sample, eic
+from pysrat.nhpp.models.cf1 import CanonicalPhaseTypeNHPP
 
 pytest.importorskip("pysrat.marlib_cf1")
 

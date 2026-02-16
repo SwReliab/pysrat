@@ -5,8 +5,8 @@ import numpy as np
 from ..dists.exp import dexp, pexp
 
 from ..base import NHPPModel
-from ..data.nhpp import NHPPData
-from .. import _core
+from ..data import NHPPData
+from ... import _core
 
 
 class ExponentialNHPP(NHPPModel):

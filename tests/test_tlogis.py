@@ -1,7 +1,7 @@
 import numpy as np
-from pysrat.data import NHPPData
-from pysrat.dists.tlogis import dtlogis, ptlogis, qtlogis, rtlogis
-from pysrat.models.tlogis import TruncatedLogisticNHPP
+from pysrat.nhpp.data import NHPPData
+from pysrat.nhpp.dists.tlogis import dtlogis, ptlogis, qtlogis, rtlogis
+from pysrat.nhpp.models.tlogis import TruncatedLogisticNHPP
 
 
 def test_tlogis_distribution_basic():

@@ -1,7 +1,7 @@
 import numpy as np
-from pysrat.data import NHPPData
-from pysrat.dists.llogis import dllogis, pllogis, qllogis, rllogis
-from pysrat.models.llogis import LogLogisticNHPP
+from pysrat.nhpp.data import NHPPData
+from pysrat.nhpp.dists.llogis import dllogis, pllogis, qllogis, rllogis
+from pysrat.nhpp.models.llogis import LogLogisticNHPP
 
 
 def test_llogis_distribution_basic():

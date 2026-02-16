@@ -116,12 +116,6 @@ double em_lxvmin_pllf(
   double w1
 );
 
-double sum_array(py::array_t<double, py::array::c_style | py::array::forcecast> x) {
-  auto buf = x.request();
-  auto ptr = static_cast<const double*>(buf.ptr);
-  return std::accumulate(ptr, ptr + buf.size, 0.0);
-}
-
 PYBIND11_MODULE(_core, m) {
   m.doc() = "pysrat core bindings";
 
@@ -294,12 +288,5 @@ PYBIND11_MODULE(_core, m) {
     py::arg("data"),
     py::arg("w1"),
     "Partial log-likelihood for log-XVMin SRM (params=[loc,scale])."
-  );
-
-  m.def(
-    "sum",
-    &sum_array,
-    py::arg("x"),
-    "Sum of a 1-D array of doubles."
   );
 }

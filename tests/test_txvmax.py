@@ -1,5 +1,5 @@
-from pysrat.data import NHPPData
-from pysrat.models.txvmax import TruncatedExtremeValueMaxNHPP
+from pysrat.nhpp.data import NHPPData
+from pysrat.nhpp.models.txvmax import TruncatedExtremeValueMaxNHPP
 
 
 def test_txvmax_model_fit_smoke():

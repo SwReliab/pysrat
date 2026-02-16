@@ -19,7 +19,7 @@ target_include_directories(srat_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/csrc)
 
 # Python extension module
 pybind11_add_module(_core
-  src/bindings.cpp
+  cppsrc/basic_pybind.cpp
   cppsrc/em_exp.cpp
   cppsrc/em_tnorm.cpp
   cppsrc/em_pareto.cpp

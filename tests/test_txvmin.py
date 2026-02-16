@@ -1,5 +1,5 @@
-from pysrat.data import NHPPData
-from pysrat.models.txvmin import TruncatedExtremeValueMinNHPP
+from pysrat.nhpp.data import NHPPData
+from pysrat.nhpp.models.txvmin import TruncatedExtremeValueMinNHPP
 
 
 def test_txvmin_model_fit_smoke():

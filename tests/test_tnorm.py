@@ -1,7 +1,7 @@
 import numpy as np
-from pysrat.data import NHPPData
-from pysrat.dists.tnorm import dtnorm, ptnorm, qtnorm, rtnorm
-from pysrat.models.tnorm import TruncatedNormalNHPP
+from pysrat.nhpp.data import NHPPData
+from pysrat.nhpp.dists.tnorm import dtnorm, ptnorm, qtnorm, rtnorm
+from pysrat.nhpp.models.tnorm import TruncatedNormalNHPP
 
 
 def test_tnorm_distribution_basic():

@@ -3,35 +3,36 @@ from __future__ import annotations
 import numpy as np
 
 from ..base import NHPPModel
-from ..data.nhpp import NHPPData
-from ..dists.llogis import dllogis, pllogis
-from .. import _core
+from ..data import NHPPData
+from ..dists.tlogis import dtlogis, ptlogis
+from ... import _core
 from ._utils import optimize_params
 
 
-class LogLogisticNHPP(NHPPModel):
-    name = "llogis"
+class TruncatedLogisticNHPP(NHPPModel):
+    name = "tlogis"
     df = 3
 
-    def __init__(self, *, omega0: float = 1.0, locationlog0: float = 0.0, scalelog0: float = 1.0):
-        super().__init__(omega0=float(omega0), locationlog0=float(locationlog0), scalelog0=float(scalelog0))
-        self._set_fitted_params(np.array([omega0, locationlog0, scalelog0], dtype=float))
+    def __init__(self, *, omega0: float = 1.0, location0: float = 0.0, scale0: float = 1.0):
+        super().__init__(omega0=float(omega0), location0=float(location0), scale0=float(scale0))
+        self._set_fitted_params(np.array([omega0, location0, scale0], dtype=float))
 
     def param_names(self) -> list[str]:
-        return ["omega", "locationlog", "scalelog"]
+        return ["omega", "location", "scale"]
 
     def init_params(self, data: NHPPData) -> np.ndarray:
-        return np.array([1.0, 1.0, max(np.log(data.mean), 1.0)], dtype=float)
+        return np.array([1.0, 0.0, data.mean], dtype=float)
 
     def em_step(self, params: np.ndarray, data: NHPPData, **kwargs) -> dict:
         core = data.to_core_dict()
-        eres = _core.em_llogis_estep(np.asarray(params, dtype=float), core)
+        eres = _core.em_tlogis_estep(np.asarray(params, dtype=float), core)
         method = kwargs.get("method", "L-BFGS-B")
         options = kwargs.get("options")
         loc_scale = optimize_params(
-            _core.em_llogis_pllf,
+            _core.em_tlogis_pllf,
             core,
             np.asarray(params[1:3], dtype=float),
+            w0=float(eres["w0"]),
             w1=float(eres["w1"]),
             method=method,
             options=options,
@@ -47,18 +48,18 @@ class LogLogisticNHPP(NHPPModel):
     def omega_(self) -> float:
         return float(self.params_[0])
 
-    def locationlog_(self) -> float:
+    def location_(self) -> float:
         return float(self.params_[1])
 
-    def scalelog_(self) -> float:
+    def scale_(self) -> float:
         return float(self.params_[2])
 
     def mvf(self, t):
         t = np.asarray(t, dtype=float)
-        return self.omega_() * pllogis(t, locationlog=self.locationlog_(), scalelog=self.scalelog_(), lower_tail=True)
+        return self.omega_() * ptlogis(t, location=self.location_(), scale=self.scale_(), lower_tail=True)
 
     def intensity(self, t):
         t = np.asarray(t, dtype=float)
-        return self.omega_() * dllogis(t, locationlog=self.locationlog_(), scalelog=self.scalelog_(), log=False)
+        return self.omega_() * dtlogis(t, location=self.location_(), scale=self.scale_(), log=False)
 
 

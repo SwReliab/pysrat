@@ -3,9 +3,9 @@ from __future__ import annotations
 import numpy as np
 
 from ..base import NHPPModel
-from ..data.nhpp import NHPPData
+from ..data import NHPPData
 from ..dists.lnorm import dlnorm, plnorm
-from .. import _core
+from ... import _core
 
 
 class LogNormalNHPP(NHPPModel):

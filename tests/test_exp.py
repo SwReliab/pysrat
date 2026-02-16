@@ -1,7 +1,7 @@
 import pysrat
-from pysrat.data import NHPPData
-from pysrat.models.exp import ExponentialNHPP
-from pysrat.fit import compare
+from pysrat.nhpp.data import NHPPData
+from pysrat.nhpp.models.exp import ExponentialNHPP
+from pysrat.nhpp.fit import compare
 
 def test_model_fit_api_exponential():
     d = NHPPData.from_counts([0, 1, 0, 5])

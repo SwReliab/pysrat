@@ -1,5 +1,5 @@
-from pysrat.data import NHPPData
-from pysrat.models.lxvmax import LogExtremeValueMaxNHPP
+from pysrat.nhpp.data import NHPPData
+from pysrat.nhpp.models.lxvmax import LogExtremeValueMaxNHPP
 
 
 def test_lxvmax_model_fit_smoke():

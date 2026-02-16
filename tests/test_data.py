@@ -1,4 +1,4 @@
-from pysrat.data import NHPPData
+from pysrat.nhpp.data import NHPPData
 
 
 def test_nhppdata_constructors():

@@ -3,36 +3,35 @@ from __future__ import annotations
 import numpy as np
 
 from ..base import NHPPModel
-from ..data.nhpp import NHPPData
-from ..dists.tgumbel import dtgumbel, ptgumbel
-from .. import _core
+from ..data import NHPPData
+from ..dists.lgumbel import dlgumbel, plgumbel
+from ... import _core
 from ._utils import optimize_params
 
 
-class TruncatedExtremeValueMaxNHPP(NHPPModel):
-    name = "txvmax"
+class LogExtremeValueMinNHPP(NHPPModel):
+    name = "lxvmin"
     df = 3
 
-    def __init__(self, *, omega0: float = 1.0, loc0: float = 0.0, scale0: float = 1.0):
-        super().__init__(omega0=float(omega0), loc0=float(loc0), scale0=float(scale0))
-        self._set_fitted_params(np.array([omega0, loc0, scale0], dtype=float))
+    def __init__(self, *, omega0: float = 1.0, loclog0: float = 0.0, scalelog0: float = 1.0):
+        super().__init__(omega0=float(omega0), loclog0=float(loclog0), scalelog0=float(scalelog0))
+        self._set_fitted_params(np.array([omega0, loclog0, scalelog0], dtype=float))
 
     def param_names(self) -> list[str]:
-        return ["omega", "loc", "scale"]
+        return ["omega", "loclog", "scalelog"]
 
     def init_params(self, data: NHPPData) -> np.ndarray:
-        return np.array([1.0, 0.0, data.max / 3.0], dtype=float)
+        return np.array([1.0, 0.0, max(np.log(data.max), 1.0)], dtype=float)
 
     def em_step(self, params: np.ndarray, data: NHPPData, **kwargs) -> dict:
         core = data.to_core_dict()
-        eres = _core.em_txvmax_estep(np.asarray(params, dtype=float), core)
+        eres = _core.em_lxvmin_estep(np.asarray(params, dtype=float), core)
         method = kwargs.get("method", "L-BFGS-B")
         options = kwargs.get("options")
         loc_scale = optimize_params(
-            _core.em_txvmax_pllf,
+            _core.em_lxvmin_pllf,
             core,
             np.asarray(params[1:3], dtype=float),
-            w0=float(eres["w0"]),
             w1=float(eres["w1"]),
             method=method,
             options=options,
@@ -48,18 +47,18 @@ class TruncatedExtremeValueMaxNHPP(NHPPModel):
     def omega_(self) -> float:
         return float(self.params_[0])
 
-    def loc_(self) -> float:
+    def loclog_(self) -> float:
         return float(self.params_[1])
 
-    def scale_(self) -> float:
+    def scalelog_(self) -> float:
         return float(self.params_[2])
 
     def mvf(self, t):
         t = np.asarray(t, dtype=float)
-        return self.omega_() * ptgumbel(t, loc=self.loc_(), scale=self.scale_(), lower_tail=True)
+        return self.omega_() * plgumbel(t, loclog=self.loclog_(), scalelog=self.scalelog_(), lower_tail=True, min=True)
 
     def intensity(self, t):
         t = np.asarray(t, dtype=float)
-        return self.omega_() * dtgumbel(t, loc=self.loc_(), scale=self.scale_(), log=False)
+        return self.omega_() * dlgumbel(t, loclog=self.loclog_(), scalelog=self.scalelog_(), log=False, min=True)
 
 

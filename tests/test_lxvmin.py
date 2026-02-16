@@ -1,5 +1,5 @@
-from pysrat.data import NHPPData
-from pysrat.models.lxvmin import LogExtremeValueMinNHPP
+from pysrat.nhpp.data import NHPPData
+from pysrat.nhpp.models.lxvmin import LogExtremeValueMinNHPP
 
 
 def test_lxvmin_model_fit_smoke():

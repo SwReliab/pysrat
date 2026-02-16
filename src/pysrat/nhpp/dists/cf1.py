@@ -3,8 +3,8 @@ from __future__ import annotations
 import numpy as np
 from scipy.special import gammaln
 
-from .. import marlib_cf1 as _cf1
-from ..data.nhpp import NHPPData
+from ... import marlib_cf1 as _cf1
+from ..data import NHPPData
 
 __all__ = [
     "dcf1",
