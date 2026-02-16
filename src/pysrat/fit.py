@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from .data import NHPPData
+from .data.nhpp import NHPPData
 from .base import NHPPModel
 
 

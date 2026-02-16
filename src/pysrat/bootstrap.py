@@ -7,7 +7,7 @@ from scipy.optimize import minimize_scalar
 from scipy.stats import t as _t_dist
 
 from .base import NHPPModel
-from .data import NHPPData
+from .data.nhpp import NHPPData
 
 __all__ = [
     "FitResult",

@@ -34,4 +34,11 @@ cmake.version = ">=3.18"
 wheel.packages = ["src/pysrat"]
 # Install generated extensions under the Python package directory
 wheel.install-dir = "."
-sdist.include = ["src/pysrat/datasets/**"]
+sdist.include = [
+  "CMakeLists.txt",
+  "src/bindings.cpp",
+  "src/pysrat/datasets/**",
+  "cppsrc/**",
+  "csrc/**",
+  "phsrc/**",
+]

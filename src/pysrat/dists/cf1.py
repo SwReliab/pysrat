@@ -4,7 +4,7 @@ import numpy as np
 from scipy.special import gammaln
 
 from .. import marlib_cf1 as _cf1
-from ..data import NHPPData
+from ..data.nhpp import NHPPData
 
 __all__ = [
     "dcf1",

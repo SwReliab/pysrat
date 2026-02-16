@@ -5,7 +5,7 @@ import numpy as np
 from ..dists.exp import dexp, pexp
 
 from ..base import NHPPModel
-from ..data import NHPPData
+from ..data.nhpp import NHPPData
 from .. import _core
 
 

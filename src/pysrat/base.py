@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 import numpy as np
-from .data import NHPPData
+from .data.nhpp import NHPPData
 
 
 class NHPPModel(ABC):

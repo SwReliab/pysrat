@@ -113,3 +113,16 @@ python -m pip install -U pip
 pip install -e .[dev]
 pytest -q
 ```
+
+## Release
+
+Tag and push to trigger the PyPI release workflow:
+
+```bash
+git tag v0.1.0
+git push --tags
+```
+
+Set either:
+- `PYPI_API_TOKEN` secret for token-based upload, or
+- Trusted Publishing (OIDC) in PyPI and keep the workflow permissions as-is.

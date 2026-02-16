@@ -9,7 +9,7 @@ try:
 except Exception:  # pragma: no cover - optional dependency
     _tqdm = None
 
-from .data import NHPPData
+from .data.nhpp import NHPPData
 from .base import NHPPModel
 
 __all__ = []
