@@ -9,40 +9,40 @@ find_package(pybind11 CONFIG REQUIRED)
 
 # C core (bundled for convenience)
 add_library(srat_core STATIC
-  csrc/numlib.c
-  csrc/inv_log_psi.c
-  csrc/gauss_inte.c
-  csrc/logistic.c
-  csrc/norm.c
+  csrc/utils/numlib.c
+  csrc/utils/inv_log_psi.c
+  csrc/utils/gauss_inte.c
+  csrc/utils/logistic.c
+  csrc/utils/norm.c
 )
-target_include_directories(srat_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/csrc)
+target_include_directories(srat_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/csrc/utils)
 
 # Python extension module
 pybind11_add_module(_core
-  cppsrc/basic_pybind.cpp
-  cppsrc/em_exp.cpp
-  cppsrc/em_tnorm.cpp
-  cppsrc/em_pareto.cpp
-  cppsrc/em_lnorm.cpp
-  cppsrc/em_tlogis.cpp
-  cppsrc/em_llogis.cpp
-  cppsrc/em_gamma.cpp
-  cppsrc/em_txvmax.cpp
-  cppsrc/gumbel.cpp
-  cppsrc/txvmin.cpp
-  cppsrc/lxvmax.cpp
-  cppsrc/lxvmin.cpp
+  csrc/basic/basic_pybind.cpp
+  csrc/basic/em_exp.cpp
+  csrc/basic/em_tnorm.cpp
+  csrc/basic/em_pareto.cpp
+  csrc/basic/em_lnorm.cpp
+  csrc/basic/em_tlogis.cpp
+  csrc/basic/em_llogis.cpp
+  csrc/basic/em_gamma.cpp
+  csrc/basic/em_txvmax.cpp
+  csrc/basic/gumbel.cpp
+  csrc/basic/txvmin.cpp
+  csrc/basic/lxvmax.cpp
+  csrc/basic/lxvmin.cpp
 )
 target_link_libraries(_core PRIVATE srat_core Python::Python)
-target_include_directories(_core PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/csrc)
+target_include_directories(_core PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/csrc/utils)
 
 # CF1 span backend module (C++20)
 pybind11_add_module(marlib_cf1
-  phsrc/cf1_pybind.cpp
-  phsrc/poisson.cpp
+  csrc/cf1/cf1_pybind.cpp
+  csrc/cf1/poisson.cpp
 )
 target_compile_features(marlib_cf1 PRIVATE cxx_std_20)
-target_include_directories(marlib_cf1 PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/phsrc)
+target_include_directories(marlib_cf1 PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/csrc/cf1)
 
 install(TARGETS _core
   LIBRARY DESTINATION pysrat
