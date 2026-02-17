@@ -15,6 +15,7 @@ add_library(srat_core STATIC
   csrc/utils/norm.c
 )
 target_include_directories(srat_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/csrc/utils)
+set_target_properties(srat_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 pybind11_add_module(_core
   csrc/basic/basic_pybind.cpp
