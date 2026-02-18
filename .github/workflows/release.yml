@@ -41,6 +41,11 @@ jobs:
           CIBW_BUILD_FRONTEND: "build"
           CIBW_BUILD_VERBOSITY: "1"
 
+          # ✅ Force binary wheels for runtime deps during test install
+          CIBW_ENVIRONMENT: >
+            PIP_PREFER_BINARY=1
+            PIP_ONLY_BINARY="numpy,scipy"
+
           # Smoke test (run inside cibuildwheel test environment)
           CIBW_TEST_COMMAND: >
             python -c "import pysrat; import pysrat._core; import pysrat.marlib_cf1; import pysrat.nhpp; print('import ok')"
