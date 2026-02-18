@@ -36,6 +36,6 @@ wheel.install-dir = "."
 sdist.include = [
   "CMakeLists.txt",
   "src/pysrat/**",
-  "src/pysrat/nhpp/datasets/**",
+  "src/pysrat/datasets/**",
   "csrc/**",
 ]

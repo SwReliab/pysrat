@@ -1,5 +1,6 @@
 from ._version import __version__
 from .data import NHPPData  # noqa: F401
+from .data import DMetricsData  # noqa: F401
 from .base import NHPPModel  # noqa: F401
 from .models.exp import ExponentialNHPP  # noqa: F401
 from .models.pareto2 import Pareto2NHPP  # noqa: F401
@@ -13,6 +14,9 @@ from .models.txvmax import TruncatedExtremeValueMaxNHPP  # noqa: F401
 from .models.lxvmax import LogExtremeValueMaxNHPP  # noqa: F401
 from .models.txvmin import TruncatedExtremeValueMinNHPP  # noqa: F401
 from .models.lxvmin import LogExtremeValueMinNHPP  # noqa: F401
+from .models.dglm import dGLMLogit  # noqa: F401
+from .models.dglm import dGLMProbit  # noqa: F401
+from .models.dglm import dGLMCloglog  # noqa: F401
 from .fit import compare  # noqa: F401
 from .bootstrap import (  # noqa: F401
 	FitResult,

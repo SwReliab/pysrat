@@ -7,6 +7,11 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 find_package(Python COMPONENTS Interpreter Development.Module REQUIRED)
 find_package(pybind11 CONFIG REQUIRED)
 
+# NOTE:
+# Eigen is vendored at: ${CMAKE_CURRENT_SOURCE_DIR}/csrc/eigen
+# so we do NOT use find_package(Eigen3).
+# find_package(Eigen3 REQUIRED)  # <- removed
+
 add_library(srat_core STATIC
   csrc/utils/numlib.c
   csrc/utils/inv_log_psi.c
@@ -33,7 +38,9 @@ pybind11_add_module(_core
   csrc/basic/lxvmin.cpp
 )
 target_link_libraries(_core PRIVATE srat_core)
-target_include_directories(_core PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/csrc/utils)
+target_include_directories(_core PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/csrc/utils
+)
 
 pybind11_add_module(marlib_cf1
   csrc/cf1/cf1_pybind.cpp
@@ -46,7 +53,16 @@ target_include_directories(marlib_cf1 PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/csrc/utils
 )
 
-install(TARGETS _core marlib_cf1
+pybind11_add_module(_irls
+  csrc/irls/irls.cpp
+)
+# Vendor Eigen include path (contains Eigen/ and unsupported/)
+target_include_directories(_irls PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/csrc/eigen
+)
+# target_link_libraries(_irls PRIVATE Eigen3::Eigen)  # <- removed
+
+install(TARGETS _core marlib_cf1 _irls
   LIBRARY DESTINATION pysrat
   ARCHIVE DESTINATION pysrat
   RUNTIME DESTINATION pysrat
