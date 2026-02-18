@@ -9,7 +9,8 @@ static const double SQRT2 = 1.41421356237309504880168872420969807857;
 static const double INV_SQRT2PI = 0.39894228040143267793994605993438186848;
 
 static double log_sqrt2pi(void) {
-  return 0.5 * log(2.0 * M_PI);
+  const double pi = acos(-1.0);
+  return 0.5 * log(2.0 * pi);
 }
 
 double norm_phi(double z) {
