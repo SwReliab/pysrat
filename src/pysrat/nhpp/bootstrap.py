@@ -6,19 +6,8 @@ import numpy as np
 from scipy.optimize import minimize_scalar
 from scipy.stats import t as _t_dist
 
-from .base import NHPPModel
-from .data import NHPPData
-
-__all__ = [
-    "FitResult",
-    "emfit",
-    "bs_time",
-    "bs_group",
-    "eic_group",
-    "eic_time",
-    "eic_sample",
-    "eic",
-]
+from ._base import NHPPModel
+from ..data import NHPPData
 
 
 @dataclass
@@ -43,7 +32,7 @@ def _clone_model(model: NHPPModel) -> NHPPModel:
     return model.__class__(**params)
 
 
-def emfit(model: NHPPModel, data: NHPPData, *, initialize: bool = True, **kwargs) -> FitResult:
+def _emfit(model: NHPPModel, data: NHPPData, *, initialize: bool = True, **kwargs) -> FitResult:
     cloned = _clone_model(model)
     cloned.fit(data, initialize=initialize, **kwargs)
     return FitResult(srm=cloned, llf=float(cloned.llf_), data=data)
@@ -122,7 +111,7 @@ def eic_group(obj: FitResult | NHPPModel, bsample: int = 100, *, initialize: boo
         fault = rng.poisson(lam)
         sample = NHPPData.from_counts(fault=fault)
         b2[b] = float(obj.srm.llf(sample))
-        obj_bs = emfit(obj.srm, sample, initialize=initialize)
+        obj_bs = _emfit(obj.srm, sample, initialize=initialize)
         b1[b] = float(obj_bs.llf)
         b4[b] = float(obj_bs.srm.llf(obj.data))
 

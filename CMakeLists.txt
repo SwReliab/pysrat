@@ -53,16 +53,23 @@ target_include_directories(marlib_cf1 PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/csrc/utils
 )
 
-pybind11_add_module(_irls
-  csrc/irls/irls.cpp
+pybind11_add_module(_glm
+  csrc/glm/pybindings.cpp
+  csrc/glm/glm_binomial.cpp
+  csrc/glm/glm_poisson.cpp
+  csrc/glm/glm_binomial_elasticnet_with_intercept.cpp
+  csrc/glm/glm_binomial_elasticnet_without_intercept.cpp
+  csrc/glm/glm_poisson_elasticnet_with_intercept.cpp
+  csrc/glm/glm_poisson_elasticnet_without_intercept.cpp
 )
 # Vendor Eigen include path (contains Eigen/ and unsupported/)
-target_include_directories(_irls PRIVATE
+target_include_directories(_glm PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/csrc/eigen
+  ${CMAKE_CURRENT_SOURCE_DIR}/csrc/glm
 )
-# target_link_libraries(_irls PRIVATE Eigen3::Eigen)  # <- removed
+# target_link_libraries(_glm PRIVATE Eigen3::Eigen)  # <- removed
 
-install(TARGETS _core marlib_cf1 _irls
+install(TARGETS _core marlib_cf1 _glm
   LIBRARY DESTINATION pysrat
   ARCHIVE DESTINATION pysrat
   RUNTIME DESTINATION pysrat

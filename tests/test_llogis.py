@@ -1,6 +1,6 @@
 import numpy as np
-from pysrat.nhpp.data import NHPPData
-from pysrat.nhpp.dists.llogis import dllogis, pllogis, qllogis, rllogis
+from pysrat.data import NHPPData
+from pysrat.dists.llogis import dllogis, pllogis, qllogis, rllogis
 from pysrat.nhpp.models.llogis import LogLogisticNHPP
 
 

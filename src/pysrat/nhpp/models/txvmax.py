@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import numpy as np
 
-from ..base import NHPPModel
-from ..data import NHPPData
-from ..dists.tgumbel import dtgumbel, ptgumbel
+from .._base import NHPPModel
+from ...data import NHPPData
+from ...dists.tgumbel import dtgumbel, ptgumbel
 from ... import _core
 from ._utils import optimize_params
 

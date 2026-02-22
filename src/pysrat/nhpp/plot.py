@@ -3,8 +3,8 @@ from __future__ import annotations
 import numpy as np
 import matplotlib.pyplot as plt
 
-from .data import NHPPData
-from .base import NHPPModel
+from ..data import NHPPData
+from ._base import NHPPModel
 
 
 def _normalize_results(results):
@@ -22,7 +22,6 @@ def _normalize_results(results):
         return out
     raise TypeError("Unsupported results type")
 
-
 def plot_mvf(
     data: NHPPData,
     results,
@@ -33,6 +32,7 @@ def plot_mvf(
     xmax=None,
     ymax=None,
     num_points: int = 300,
+    title: str | None = None,
     ax=None,
 ):
     results = _normalize_results(results)
@@ -57,13 +57,15 @@ def plot_mvf(
     ax.set_xlabel(xlab)
     ax.set_ylabel(ylab)
 
+    if title is not None:
+        ax.set_title(title)
+
     ax.set_xlim(0.0, float(xmax))
     if ymax is not None:
         ax.set_ylim(0.0, float(ymax))
 
     ax.legend()
     return ax
-
 
 def plot_dmvf(
     data: NHPPData,
@@ -74,6 +76,7 @@ def plot_dmvf(
     datalab: str = "data",
     xmax=None,
     ymax=None,
+    title: str | None = None,
     ax=None,
 ):
     results = _normalize_results(results)
@@ -83,13 +86,17 @@ def plot_dmvf(
     if ax is None:
         _, ax = plt.subplots()
 
-    ax.bar(t, n, width=np.maximum(data.time, 1e-12), alpha=0.5, label=datalab, align="center")
+    ax.bar(t, n, width=np.maximum(data.time, 1e-12),
+           alpha=0.5, label=datalab, align="center")
 
     for name, res in results.items():
         ax.plot(t, res.dmvf(t), label=name)
 
     ax.set_xlabel(xlab)
     ax.set_ylabel(ylab)
+
+    if title is not None:
+        ax.set_title(title)
 
     if xmax is not None:
         ax.set_xlim(0.0, float(xmax))
@@ -98,7 +105,6 @@ def plot_dmvf(
 
     ax.legend()
     return ax
-
 
 def plot_rate(
     data: NHPPData,
@@ -110,6 +116,7 @@ def plot_rate(
     xmax=None,
     ymax=None,
     num_points: int = 300,
+    title: str | None = None,
     ax=None,
 ):
     results = _normalize_results(results)
@@ -124,7 +131,8 @@ def plot_rate(
     if ax is None:
         _, ax = plt.subplots()
 
-    ax.bar(t, rate_emp, width=np.maximum(data.time, 1e-12), alpha=0.3, label=datalab)
+    ax.bar(t, rate_emp, width=np.maximum(data.time, 1e-12),
+           alpha=0.3, label=datalab)
     ax.axvline(present, linestyle="dotted")
 
     tgrid = np.linspace(0.1, float(xmax), num_points)
@@ -133,6 +141,9 @@ def plot_rate(
 
     ax.set_xlabel(xlab)
     ax.set_ylabel(ylab)
+
+    if title is not None:
+        ax.set_title(title)
 
     ax.set_xlim(0.1, float(xmax))
     if ymax is not None:

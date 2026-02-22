@@ -1,6 +1,6 @@
 import numpy as np
-from pysrat.nhpp.data import NHPPData
-from pysrat.nhpp.dists.tnorm import dtnorm, ptnorm, qtnorm, rtnorm
+from pysrat.data import NHPPData
+from pysrat.dists.tnorm import dtnorm, ptnorm, qtnorm, rtnorm
 from pysrat.nhpp.models.tnorm import TruncatedNormalNHPP
 
 

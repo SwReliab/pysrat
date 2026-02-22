@@ -1,6 +1,6 @@
 import numpy as np
-from pysrat.nhpp.data import NHPPData
-from pysrat.nhpp.dists.lnorm import dlnorm, plnorm, qlnorm, rlnorm
+from pysrat.data import NHPPData
+from pysrat.dists.lnorm import dlnorm, plnorm, qlnorm, rlnorm
 from pysrat.nhpp.models.lnorm import LogNormalNHPP
 
 

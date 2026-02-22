@@ -1,7 +1,7 @@
 import pysrat
-from pysrat.nhpp.data import NHPPData
+from pysrat.data import NHPPData
 from pysrat.nhpp.models.pareto2 import Pareto2NHPP
-
+from pysrat.nhpp.plot import plot_mvf
 
 def test_model_fit_api_pareto2():
     d = NHPPData.from_counts([0, 1, 0, 5])
@@ -13,5 +13,5 @@ def test_model_fit_api_pareto2():
 def test_plot_accepts_model_pareto2():
     d = NHPPData.from_counts([0, 1, 0, 5])
     model = Pareto2NHPP().fit(d, maxiter=5)
-    ax = pysrat.plot_mvf(d, model)
+    ax = plot_mvf(d, model)
     assert ax is not None

@@ -1,6 +1,6 @@
 import numpy as np
-from pysrat.nhpp.data import NHPPData
-from pysrat.nhpp.dists.tlogis import dtlogis, ptlogis, qtlogis, rtlogis
+from pysrat.data import NHPPData
+from pysrat.dists.tlogis import dtlogis, ptlogis, qtlogis, rtlogis
 from pysrat.nhpp.models.tlogis import TruncatedLogisticNHPP
 
 

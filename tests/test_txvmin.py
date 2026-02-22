@@ -1,4 +1,4 @@
-from pysrat.nhpp.data import NHPPData
+from pysrat.data import NHPPData
 from pysrat.nhpp.models.txvmin import TruncatedExtremeValueMinNHPP
 
 

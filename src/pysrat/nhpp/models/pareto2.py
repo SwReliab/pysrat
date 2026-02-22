@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import numpy as np
 
-from ..base import NHPPModel
-from ..data import NHPPData
-from ..dists.pareto2 import dpareto2, ppareto2
+from .._base import NHPPModel
+from ...data import NHPPData
+from ...dists.pareto2 import dpareto2, ppareto2
 from ... import _core
 
 

@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import numpy as np
 
-from ..dists.exp import dexp, pexp
+from ...dists.exp import dexp, pexp
 
-from ..base import NHPPModel
-from ..data import NHPPData
+from .._base import NHPPModel
+from ...data import NHPPData
 from ... import _core
 
 

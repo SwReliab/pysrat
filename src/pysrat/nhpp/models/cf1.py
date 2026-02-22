@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import numpy as np
 
-from ..base import NHPPModel
-from ..data import NHPPData
+from .._base import NHPPModel
+from ...data import NHPPData
 from ... import marlib_cf1 as _cf1
-from ..dists.cf1 import dcf1, pcf1, cf1_params_init, cf1llf
+from ...dists.cf1 import dcf1, pcf1, cf1_params_init, cf1llf
 
 
 class CanonicalPhaseTypeNHPP(NHPPModel):

@@ -3,7 +3,6 @@ from __future__ import annotations
 import numpy as np
 from scipy.optimize import minimize
 
-
 def optimize_params(
     pllf_fn,
     data_dict: dict,

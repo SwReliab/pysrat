@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import numpy as np
 
-from ..base import NHPPModel
-from ..data import NHPPData
-from ..dists.tnorm import ptnorm, dtnorm
+from .._base import NHPPModel
+from ...data import NHPPData
+from ...dists.tnorm import ptnorm, dtnorm
 from ... import _core
 
 
