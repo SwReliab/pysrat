@@ -26,10 +26,10 @@ class NHPPData:
         }
 
     @classmethod
-    def from_intervals(cls, *, time=None, fault=None, type=None, te=None) -> "NHPPData":
-        time = None if time is None else np.asarray(time, dtype=float)
-        fault = None if fault is None else np.asarray(fault, dtype=int)
-        type = None if type is None else np.asarray(type, dtype=int)
+    def from_intervals(cls, *, intervals=None, counts=None, on_boundary=None, te=None) -> "NHPPData":
+        time = None if intervals is None else np.asarray(intervals, dtype=float)
+        fault = None if counts is None else np.asarray(counts, dtype=int)
+        type = None if on_boundary is None else np.asarray(on_boundary, dtype=int)
         te = None if te is None else float(te)
 
         if time is None:
@@ -66,6 +66,13 @@ class NHPPData:
         mean = float((ct * tmp).sum() / total)
         maxv = float(ct[tmp >= 1].max())
 
+        if np.all(type == 0):
+            kind = "counts"
+        elif np.all(fault == 0) and np.any(type == 1):
+            kind = "fault_times"
+        else:
+            kind = "mixed"
+
         return cls(
             time=np.asarray(time, dtype=float),
             fault=np.asarray(fault, dtype=int),
@@ -73,40 +80,154 @@ class NHPPData:
             total=total,
             mean=mean,
             max=maxv,
-            kind="intervals",
+            kind=kind,
         )
 
     @classmethod
-    def from_counts(cls, fault, *, type=None) -> "NHPPData":
-        data = cls.from_intervals(time=None, fault=fault, type=type, te=None)
-        return cls(
-            time=data.time,
-            fault=data.fault,
-            type=data.type,
-            total=data.total,
-            mean=data.mean,
-            max=data.max,
-            kind="counts",
+    def from_event_times(cls, intervals, *, te) -> "NHPPData":
+        counts = np.zeros_like(intervals, dtype=int)
+        on_boundary = np.zeros_like(intervals, dtype=int)
+        return cls.from_intervals(intervals=intervals, counts=counts, on_boundary=on_boundary, te=te)
+
+    @classmethod
+    def from_dataframe(
+        cls,
+        df,
+        *,
+        intervals: str | None = None,
+        counts: str | None = None,
+        boundary: str | None = None,
+        times: str | None = None,
+        te: float | None = None,
+    ):
+        """
+        Create NHPPData from a pandas DataFrame.
+
+        Parameters
+        ----------
+        intervals : column name of interval lengths
+        counts : column name of counts
+        boundary : column name of boundary indicator
+        times : column name of event times (mutually exclusive with intervals)
+        te : last observation time (required if times is given)
+        """
+
+        import numpy as np
+
+        # ---- event times mode ----
+        if times is not None:
+            if intervals is not None:
+                raise ValueError("Specify either times or intervals, not both.")
+            if te is None:
+                raise ValueError("te must be provided when using times.")
+            return cls.from_event_times(
+                times=np.asarray(df[times], dtype=float),
+                te=te,
+            )
+
+        # ---- intervals mode ----
+        if intervals is None and counts is None:
+            raise ValueError("At least intervals or counts must be specified.")
+
+        intervals_arr = (
+            None if intervals is None
+            else np.asarray(df[intervals], dtype=float)
+        )
+
+        counts_arr = (
+            None if counts is None
+            else np.asarray(df[counts], dtype=int)
+        )
+
+        boundary_arr = (
+            None if boundary is None
+            else np.asarray(df[boundary], dtype=int)
+        )
+
+        return cls.from_intervals(
+            intervals=intervals_arr,
+            counts=counts_arr,
+            on_boundary=boundary_arr,
         )
 
     @classmethod
-    def from_fault_times(cls, times, *, te) -> "NHPPData":
-        data = cls.from_intervals(time=times, fault=None, type=None, te=te)
-        return cls(
-            time=data.time,
-            fault=data.fault,
-            type=data.type,
-            total=data.total,
-            mean=data.mean,
-            max=data.max,
-            kind="fault_times",
+    def from_csv(
+        cls,
+        path,
+        *,
+        intervals: str | None = None,
+        counts: str | None = None,
+        boundary: str | None = None,
+        times: str | None = None,
+        te: float | None = None,
+        **read_csv_kwargs,
+    ):
+        """
+        Create NHPPData from a CSV file.
+
+        Parameters
+        ----------
+        path : str or path-like
+            Path to CSV file.
+
+        intervals : str, optional
+            Column name of interval lengths.
+
+        counts : str, optional
+            Column name of fault counts.
+
+        boundary : str, optional
+            Column name of boundary indicator.
+
+        times : str, optional
+            Column name of event times (mutually exclusive with intervals).
+
+        te : float, optional
+            Last observation time (required if times is given).
+
+        read_csv_kwargs :
+            Additional keyword arguments passed to pandas.read_csv().
+        """
+
+        try:
+            import pandas as pd
+        except ImportError as e:
+            raise ImportError(
+                "pandas is required for from_csv(). "
+                "Install it with: pip install pandas "
+                "or pip install pysrat[io]"
+            ) from e
+
+        df = pd.read_csv(path, **read_csv_kwargs)
+
+        return cls.from_dataframe(
+            df,
+            intervals=intervals,
+            counts=counts,
+            boundary=boundary,
+            times=times,
+            te=te,
         )
 
     def __repr__(self) -> str:
-        cols = np.vstack([self.time, self.fault, self.type]).T
-        head = "NHPPData(time, fault, type)\n"
-        body = "\n".join([f"{r[0]:g}\t{int(r[1])}\t{int(r[2])}" for r in cols[:50]])
-        if cols.shape[0] > 50:
-            body += "\n..."
-        meta = f"\nlen={self.len}, total={self.total}, mean={self.mean:g}, max={self.max:g}"
-        return head + "time\tfault\ttype\n" + body + meta
+        import numpy as np
+        n = self.len
+        head_n = min(n, 20)
+        header = f"NHPPData(kind='{self.kind}', len={n}, total={self.total})\n"
+        header += "-" * 50 + "\n"
+        header += f"{'idx':>4} {'intervals':>10} {'counts':>6} {'on_boundary':>6}\n"
+        rows = []
+        for i in range(head_n):
+            rows.append(
+                f"{i:4d} "
+                f"{self.time[i]:10.4g} "
+                f"{int(self.fault[i]):6d} "
+                f"{int(self.type[i]):6d}"
+            )
+        if n > head_n:
+            rows.append("   ...")
+        footer = (
+            "\n" + "-" * 50 +
+            f"\nmean={self.mean:.4g}  max={self.max:.4g}"
+        )
+        return header + "\n".join(rows) + footer

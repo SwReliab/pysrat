@@ -51,36 +51,36 @@ def _intensity_scalar(model: NHPPModel, t: float) -> float:
 
 
 def bs_time(srm: NHPPModel, data: NHPPData, maximum: float, *, rng: np.random.Generator | None = None) -> NHPPData:
-    if maximum <= 0:
-        raise ValueError("maximum must be > 0")
-    rng = rng if rng is not None else np.random.default_rng()
+    # WIP: This is a simple thinning-based bootstrap. It can be inefficient for large datasets or high-intensity models. Consider implementing a more efficient method if needed.
+    # if maximum <= 0:
+    #     raise ValueError("maximum must be > 0")
+    # rng = rng if rng is not None else np.random.default_rng()
 
-    cte = float(np.sum(data.time))
+    # cte = float(np.sum(data.time))
 
-    n = rng.poisson(maximum * cte)
-    if n == 0:
-        raise ValueError("bootstrap produced no events; increase maximum or retry")
+    # n = rng.poisson(maximum * cte)
+    # if n == 0:
+    #     raise ValueError("bootstrap produced no events; increase maximum or retry")
 
-    candidates = np.sort(rng.uniform(0.0, cte, size=int(n)))
-    keep = srm.intensity(candidates) / maximum > rng.uniform(0.0, 1.0, size=int(n))
-    y = candidates[keep]
-    if y.size == 0:
-        raise ValueError("bootstrap produced no events; increase maximum or retry")
+    # candidates = np.sort(rng.uniform(0.0, cte, size=int(n)))
+    # keep = srm.intensity(candidates) / maximum > rng.uniform(0.0, 1.0, size=int(n))
+    # y = candidates[keep]
+    # if y.size == 0:
+    #     raise ValueError("bootstrap produced no events; increase maximum or retry")
 
-    time = np.diff(np.concatenate([[0.0], y]))
-    te_res = float(cte - np.sum(time))
-    return NHPPData.from_intervals(time=time, te=te_res)
+    # time = np.diff(np.concatenate([[0.0], y]))
+    # te_res = float(cte - np.sum(time))
+    # return NHPPData.from_intervals(intervals=time, te=te_res)
+    raise NotImplementedError("bs_time is not implemented yet; consider using bs_group instead")
 
 
 def bs_group(srm: NHPPModel, data: NHPPData, *, rng: np.random.Generator | None = None) -> NHPPData:
     rng = rng if rng is not None else np.random.default_rng()
-
     ctime = np.concatenate([[0.0], np.cumsum(np.asarray(data.time, dtype=float))])
     lam = np.diff(srm.mvf(ctime))
     lam = np.clip(lam, 0.0, None)
     fault = rng.poisson(lam)
-    return NHPPData.from_counts(fault=fault)
-
+    return NHPPData.from_intervals(intervals=data.time, counts=fault)
 
 def _ensure_llf(model: NHPPModel):
     if not hasattr(model, "llf"):
@@ -109,7 +109,7 @@ def eic_group(obj: FitResult | NHPPModel, bsample: int = 100, *, initialize: boo
 
     for b in range(int(bsample)):
         fault = rng.poisson(lam)
-        sample = NHPPData.from_counts(fault=fault)
+        sample = NHPPData.from_intervals(intervals=data.time, counts=fault)
         b2[b] = float(obj.srm.llf(sample))
         obj_bs = _emfit(obj.srm, sample, initialize=initialize)
         b1[b] = float(obj_bs.llf)
@@ -140,7 +140,7 @@ def eic_time(obj: FitResult | NHPPModel, bsample: int = 100, *, initialize: bool
     for b in range(int(bsample)):
         sample = bs_time(obj.srm, data, maximum, rng=rng)
         b2[b] = float(obj.srm.llf(sample))
-        obj_bs = emfit(obj.srm, sample, initialize=initialize)
+        obj_bs = _emfit(obj.srm, sample, initialize=initialize)
         b1[b] = float(obj_bs.llf)
         b4[b] = float(obj_bs.srm.llf(obj.data))
 
@@ -163,6 +163,8 @@ def eic_sample(obj: FitResult | NHPPModel, bsample: int = 100, *, initialize: bo
 def eic(obj: FitResult | NHPPModel, bsample: int = 100, alpha: float = 0.95, *, initialize: bool = False,
     rng: np.random.Generator | None = None, data: NHPPData | None = None) -> dict:
     obj = _as_fitresult(obj, data=data)
+    if rng is None:
+        rng = np.random.default_rng()
     if not (0.0 < alpha < 1.0):
         raise ValueError("alpha must be in (0,1)")
     kind = _faultdata_kind(obj.data)
