@@ -17,6 +17,10 @@ class NHPPData:
     def len(self) -> int:
         return int(np.asarray(self.time).shape[0])
 
+    @property
+    def total_time(self) -> float:
+        return float(np.sum(self.time))
+
     def to_core_dict(self) -> dict:
         return {
             "len": self.len,
@@ -210,24 +214,96 @@ class NHPPData:
         )
 
     def __repr__(self) -> str:
-        import numpy as np
         n = self.len
         head_n = min(n, 20)
-        header = f"NHPPData(kind='{self.kind}', len={n}, total={self.total})\n"
-        header += "-" * 50 + "\n"
-        header += f"{'idx':>4} {'intervals':>10} {'counts':>6} {'on_boundary':>6}\n"
+
+        total_time = float(np.sum(self.time)) if n else 0.0
+
+        header = (
+            f"NHPPData(kind='{self.kind}', "
+            f"len={n}, total_faults={int(self.total)}, "
+            f"total_time={total_time:.6g})\n"
+            + "-" * 58 + "\n"
+            + f"{'idx':>4} {'intervals':>10} {'counts':>8} {'on_boundary':>11}\n"
+        )
+
         rows = []
         for i in range(head_n):
             rows.append(
                 f"{i:4d} "
-                f"{self.time[i]:10.4g} "
-                f"{int(self.fault[i]):6d} "
-                f"{int(self.type[i]):6d}"
+                f"{float(self.time[i]):10.6g} "
+                f"{int(self.fault[i]):8d} "
+                f"{int(self.type[i]):11d}"
             )
+
         if n > head_n:
             rows.append("   ...")
+
         footer = (
-            "\n" + "-" * 50 +
-            f"\nmean={self.mean:.4g}  max={self.max:.4g}"
+            "\n" + "-" * 58 +
+            f"\nmean={float(self.mean):.6g}  "
+            f"max={float(self.max):.6g}"
         )
+
         return header + "\n".join(rows) + footer
+
+    def truncate(
+        self,
+        *,
+        t_end: float | None = None,
+        frac: float | None = None,
+    ) -> "NHPPData":
+
+        if (t_end is None) == (frac is None):
+            raise ValueError("Specify exactly one of t_end or frac.")
+
+        total = self.total_time
+        if frac is not None:
+            if not (0.0 < frac <= 1.0):
+                raise ValueError("frac must be in (0, 1].")
+            t_end = frac * total
+
+        t_end = float(t_end)
+        if t_end <= 0.0:
+            raise ValueError("t_end must be positive.")
+
+        ct = np.cumsum(self.time)
+        if t_end > float(ct[-1]):
+            raise ValueError(f"t_end ({t_end}) exceeds total_time ({float(ct[-1])}).")
+
+        # get the index of the first interval that ends after t_end
+        idx = int(np.searchsorted(ct, t_end, side="left"))
+        if idx == 0 and t_end < float(ct[0]):
+            raise ValueError("t_end is before the first interval.")
+
+        # truncate the data at idx, adjusting the last interval if necessary
+        end = idx + 1
+
+        time = np.array(self.time[:end], dtype=float)
+        fault = np.array(self.fault[:end], dtype=int)
+        type_ = np.array(self.type[:end], dtype=int)
+
+        over = float(ct[idx] - t_end)  # the amount of time to cut from the last interval
+        if over > 0.0:
+            # If the last interval is cut, we need to adjust the counts and boundary indicators.
+            if fault[-1] != 0:
+                raise ValueError(
+                    "Cannot truncate inside an interval with nonzero counts; "
+                    "the correct split of counts is undefined."
+                )
+            time[-1] -= over
+            # If the last interval is on the boundary, we need to move the boundary indicator to the new end point.
+            # type_[-1] = 0
+
+        if np.isclose(time[-1], 0.0):
+            time = time[:-1]
+            fault = fault[:-1]
+            type_ = type_[:-1]
+            if len(time) == 0:
+                raise ValueError("t_end truncates all intervals to zero length.")
+
+        return NHPPData.from_intervals(
+            intervals=time,
+            counts=fault,
+            on_boundary=type_,
+        )
