@@ -21,6 +21,10 @@ class NHPPData:
     def total_time(self) -> float:
         return float(np.sum(self.time))
 
+    @property
+    def total_fault(self) -> float:
+        return float(np.sum(self.fault) + np.sum(self.type))
+
     def to_core_dict(self) -> dict:
         return {
             "len": self.len,
