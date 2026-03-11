@@ -23,7 +23,6 @@ jobs:
           python-version: "3.11"
           cache: "pip"
 
-      # cibuildwheel / pip cache
       - name: Cache cibuildwheel
         uses: actions/cache@v4
         with:
@@ -39,38 +38,25 @@ jobs:
       - name: Build wheels
         uses: pypa/cibuildwheel@v3.1.4
         env:
-          # Build CPython wheels
           CIBW_BUILD: "cp39-* cp310-* cp311-* cp312-* cp313-*"
-
-          # Skip PyPy and musllinux
           CIBW_SKIP: "pp* *musllinux*"
 
-          # Architectures
           CIBW_ARCHS_LINUX: "x86_64"
           CIBW_ARCHS_MACOS: "x86_64 arm64"
           CIBW_ARCHS_WINDOWS: "AMD64"
 
-          # Build tools
-          CIBW_BEFORE_BUILD: >
+          CIBW_BEFORE_BUILD: |
             python -m pip install -U pip
-            pip install -U cmake ninja
+            python -m pip install -U cmake ninja
 
-          # Build settings
           CIBW_BUILD_FRONTEND: "build"
           CIBW_BUILD_VERBOSITY: "1"
 
-          # Prefer binary runtime deps
           CIBW_ENVIRONMENT: >
             PIP_PREFER_BINARY=1
             PIP_ONLY_BINARY="numpy,scipy"
 
-          # Smoke test
-          CIBW_TEST_COMMAND: >
-            python -c "import pysrat;
-            import pysrat._core;
-            import pysrat.marlib_cf1;
-            import pysrat.nhpp;
-            print('import ok')"
+          CIBW_TEST_COMMAND: "python -c \"import pysrat; import pysrat._core; import pysrat.marlib_cf1; import pysrat.nhpp; print('import ok')\""
 
       - name: Upload wheels
         uses: actions/upload-artifact@v4
