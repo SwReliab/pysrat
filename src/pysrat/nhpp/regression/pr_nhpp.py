@@ -101,6 +101,7 @@ def fit_pr_nhpp(
     *,
     names: Optional[Sequence[str]] = None,
     data_by_name: Optional[Mapping[str, Any]] = None,
+    offset: Optional[np.ndarray] = None,
     fit_intercept: bool = True,
     initialize: bool = True,
     # outer loop
@@ -145,6 +146,10 @@ def fit_pr_nhpp(
         SMetricsData (names + metrics (+ optional offset/standardize)).
         Row order is aligned to model-name order via sdata.reorder(names_list).
 
+    offset:
+        Optional override for regression offset, shape (m,).
+        If None, uses ``sdata.offset``.
+
     reg:
         "glm" uses glm_poisson (IRLS WLS).
         "elasticnet" uses glm_poisson_elasticnet if available.
@@ -176,7 +181,6 @@ def fit_pr_nhpp(
     s_aligned = sdata.reorder(names_list)
 
     X = np.asarray(s_aligned.metrics, dtype=float)
-    offset = None if s_aligned.offset is None else np.asarray(s_aligned.offset, dtype=float)
 
     m, q = X.shape
     if m != len(names_list):
@@ -184,6 +188,13 @@ def fit_pr_nhpp(
             "Aligned smetrics rows must match number of models "
             "(bug in reorder or names mismatch)."
         )
+
+    if offset is None:
+        offset_arr = None if s_aligned.offset is None else np.asarray(s_aligned.offset, dtype=float)
+    else:
+        offset_arr = np.asarray(offset, dtype=float).reshape(-1)
+        if offset_arr.shape != (m,):
+            raise ValueError(f"offset must have shape ({m},), got {offset_arr.shape}")
 
     std_mask = standardize if standardize is not None else s_aligned.standardize
     std_mask01 = _as_mask_01(std_mask, q, name="standardize") if std_mask is not None else None
@@ -271,7 +282,7 @@ def fit_pr_nhpp(
             reg_res = glm_poisson(
                 X=X,
                 y=total,
-                offset=offset,
+                offset=offset_arr,
                 intercept0=intercept0,
                 beta0=beta0,
                 fit_intercept=fit_intercept,
@@ -289,7 +300,7 @@ def fit_pr_nhpp(
             reg_res = glm_poisson_elasticnet(  # type: ignore[misc]
                 X=X,
                 y=total,
-                offset=offset,
+                offset=offset_arr,
                 intercept0=intercept0,
                 beta0=beta0,
                 fit_intercept=fit_intercept,
@@ -318,7 +329,7 @@ def fit_pr_nhpp(
         coef_new = np.concatenate([[reg_intercept], reg_beta]) if fit_intercept else reg_beta.copy()
 
         # Fitted omega (mu) from log link
-        omega_new = _poisson_mu_log_link(reg_intercept, reg_beta, X, offset)
+        omega_new = _poisson_mu_log_link(reg_intercept, reg_beta, X, offset_arr)
 
         # ---- Update omega in each model's parameter vector (params[0] is omega)
         new_params: Dict[str, np.ndarray] = {}

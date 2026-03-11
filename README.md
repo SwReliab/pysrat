@@ -12,7 +12,7 @@ implementations exposed from C++ via pybind11.
 - A collection of classical NHPP models and CF1 (canonical phase-type)
 - Plotting helpers for visualization (`plot_mvf`, `plot_dmvf`, `plot_rate`)
 - Multi-factor models (MFLogitNHPP, MFProbitNHPP, MFCloglogNHPP)
-- A Poisson regression–based framework (pr_nhpp_fit)
+- A Poisson regression–based framework (`fit_pr_nhpp`)
 
 ### Installation
 
@@ -124,6 +124,28 @@ best = min((m1, m2), key=lambda m: m.aic_)
 print("Best model:", best.name)
 ```
 
+### PR-NHPP regression framework
+
+`fit_pr_nhpp` fits module-wise NHPP models with a Poisson regression outer loop.
+
+```python
+import numpy as np
+from pysrat.data import SMetricsData
+from pysrat.nhpp.regression import fit_pr_nhpp
+
+# names must align with your model dictionary keys
+sdata = SMetricsData(
+    names=["mod_a", "mod_b", "mod_c"],
+    metrics=np.array([[1.2, 0.3], [0.7, 1.0], [1.5, 0.4]], dtype=float),
+    offset=np.log(np.array([1200.0, 900.0, 1500.0], dtype=float)),  # optional
+)
+
+fit = fit_pr_nhpp(models, sdata, reg="glm")
+
+# You can also override offset at call-time (shape = number of modules)
+fit2 = fit_pr_nhpp(models, sdata, reg="glm", offset=np.log(np.array([1.0, 2.0, 4.0])))
+```
+
 ## Examples
 
 See the `examples/` notebooks included in the repository for end-to-end
@@ -132,7 +154,7 @@ workflows (basic fitting, comparison, CF1 usage and plotting):
 - `examples/example1.ipynb` — Exponential NHPP
 - `examples/example2.ipynb` — CF1 fitting and comparison
 - `examples/example3.ipynb` — Multi-factor models (MFLogitNHPP)
-- `examples/example4.ipynb` — Poisson regression–based NHPP fitting (pr_nhpp_fit)
+- `examples/example4.ipynb` — Poisson regression–based NHPP fitting (`fit_pr_nhpp`)
 
 ## Contributing
 
