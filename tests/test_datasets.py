@@ -24,9 +24,9 @@ def test_musa_ss1a_exp_fit():
     data_path = resources.files("pysrat").joinpath("datasets/musa/ss1a.csv")
     df = pd.read_csv(data_path)
     data = NHPPData.from_intervals(
-        time=df["time"].to_numpy(dtype=float),
-        fault=df["fault"].to_numpy(dtype=float),
-        type=df["indicator"].to_numpy(dtype=int),
+        intervals=df["time"].to_numpy(dtype=float),
+        counts=df["fault"].to_numpy(dtype=float),
+        on_boundary=df["indicator"].to_numpy(dtype=int),
     )
     model = ExponentialNHPP().fit(data, maxiter=5)
     assert model.params_.shape == (2,)

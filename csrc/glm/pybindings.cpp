@@ -17,10 +17,6 @@
 
 namespace py = pybind11;
 
-// `GLMBinomialResult` Python class is registered inside `bind_glm` below so
-// we can access the module object `m` and provide a safe conversion for the
-// `beta` Eigen vector into a NumPy array.
-
 static Eigen::VectorXi default_standardize_mask(int p) {
   Eigen::VectorXi m(p);
   m.setOnes();
@@ -47,6 +43,34 @@ static Eigen::VectorXi parse_standardize_mask(py::object standardize_obj, int p)
   return stdmask;
 }
 
+static Eigen::VectorXi default_penalty_mask(int p) {
+  Eigen::VectorXi m(p);
+  if (p <= 0) return m;
+  m.setOnes();
+  return m;
+}
+
+static Eigen::VectorXi parse_penalty_mask(py::object penalty_obj, int p) {
+  Eigen::VectorXi penmask;
+
+  if (penalty_obj.is_none()) {
+    penmask = default_penalty_mask(p);
+    return penmask;
+  }
+
+  py::array_t<int, py::array::c_style | py::array::forcecast> penalty =
+      penalty_obj.cast<py::array_t<int, py::array::c_style | py::array::forcecast>>();
+  auto pb = penalty.request();
+
+  if (pb.ndim != 1) throw std::invalid_argument("penalty must be 1D");
+  if (static_cast<int>(pb.shape[0]) != p)
+    throw std::invalid_argument("penalty length must match X.cols()");
+
+  Eigen::Map<const Eigen::VectorXi> p_e(static_cast<const int*>(pb.ptr), p);
+  penmask = p_e;
+  return penmask;
+}
+
 GLMBinomialResult glm_binomial_with_intercept_py(
     py::array_t<double, py::array::c_style | py::array::forcecast> X,
     py::array_t<double, py::array::c_style | py::array::forcecast> y,
@@ -62,55 +86,8 @@ GLMBinomialResult glm_binomial_with_intercept_py(
     double eps_mu,
     double eps_dmu) {
 
-std::feclearexcept(FE_ALL_EXCEPT);  auto Xb = X.request();
-  if (Xb.ndim != 2) throw std::invalid_argument("X must be 2D");
-  const int n = static_cast<int>(Xb.shape[0]);
-  const int p = static_cast<int>(Xb.shape[1]);
+  std::feclearexcept(FE_ALL_EXCEPT);
 
-  auto yb = y.request();
-  auto nb = n_trials.request();
-  auto ob = offset.request();
-  auto bb = beta0.request();
-
-  if (yb.ndim != 1 || nb.ndim != 1 || ob.ndim != 1 || bb.ndim != 1)
-    throw std::invalid_argument("y/n_trials/offset/beta0 must be 1D");
-  if (static_cast<int>(yb.shape[0]) != n ||
-      static_cast<int>(nb.shape[0]) != n ||
-      static_cast<int>(ob.shape[0]) != n)
-    throw std::invalid_argument("y/n_trials/offset length must match X.rows()");
-  if (static_cast<int>(bb.shape[0]) != p)
-    throw std::invalid_argument("beta0 length must match X.cols()");
-
-  Eigen::Map<const Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> X_e(
-      static_cast<const double*>(Xb.ptr), n, p);
-  Eigen::Map<const Eigen::VectorXd> y_e(static_cast<const double*>(yb.ptr), n);
-  Eigen::Map<const Eigen::VectorXd> n_e(static_cast<const double*>(nb.ptr), n);
-  Eigen::Map<const Eigen::VectorXd> off_e(static_cast<const double*>(ob.ptr), n);
-  Eigen::Map<const Eigen::VectorXd> b0_e(static_cast<const double*>(bb.ptr), p);
-
-  const Eigen::VectorXi stdmask = parse_standardize_mask(standardize_obj, p);
-
-  // return the C++ core result directly
-  return glm_binomial_with_intercept(
-      X_e, y_e, n_e, off_e,
-      intercept0, b0_e, stdmask,
-      max_iter, tol, link, ridge, eps_mu, eps_dmu);
-}
-
-GLMBinomialResult glm_binomial_without_intercept_py(
-    py::array_t<double, py::array::c_style | py::array::forcecast> X,
-    py::array_t<double, py::array::c_style | py::array::forcecast> y,
-    py::array_t<double, py::array::c_style | py::array::forcecast> n_trials,
-    py::array_t<double, py::array::c_style | py::array::forcecast> offset,
-    py::array_t<double, py::array::c_style | py::array::forcecast> beta0,
-    py::object standardize_obj,
-    int max_iter,
-    double tol,
-    const std::string& link,
-    double ridge,
-    double eps_mu,
-    double eps_dmu) {
-std::feclearexcept(FE_ALL_EXCEPT);
   auto Xb = X.request();
   if (Xb.ndim != 2) throw std::invalid_argument("X must be 2D");
   const int n = static_cast<int>(Xb.shape[0]);
@@ -139,7 +116,56 @@ std::feclearexcept(FE_ALL_EXCEPT);
 
   const Eigen::VectorXi stdmask = parse_standardize_mask(standardize_obj, p);
 
-  // return the C++ core result directly
+  return glm_binomial_with_intercept(
+      X_e, y_e, n_e, off_e,
+      intercept0, b0_e, stdmask,
+      max_iter, tol, link, ridge, eps_mu, eps_dmu);
+}
+
+GLMBinomialResult glm_binomial_without_intercept_py(
+    py::array_t<double, py::array::c_style | py::array::forcecast> X,
+    py::array_t<double, py::array::c_style | py::array::forcecast> y,
+    py::array_t<double, py::array::c_style | py::array::forcecast> n_trials,
+    py::array_t<double, py::array::c_style | py::array::forcecast> offset,
+    py::array_t<double, py::array::c_style | py::array::forcecast> beta0,
+    py::object standardize_obj,
+    int max_iter,
+    double tol,
+    const std::string& link,
+    double ridge,
+    double eps_mu,
+    double eps_dmu) {
+
+  std::feclearexcept(FE_ALL_EXCEPT);
+
+  auto Xb = X.request();
+  if (Xb.ndim != 2) throw std::invalid_argument("X must be 2D");
+  const int n = static_cast<int>(Xb.shape[0]);
+  const int p = static_cast<int>(Xb.shape[1]);
+
+  auto yb = y.request();
+  auto nb = n_trials.request();
+  auto ob = offset.request();
+  auto bb = beta0.request();
+
+  if (yb.ndim != 1 || nb.ndim != 1 || ob.ndim != 1 || bb.ndim != 1)
+    throw std::invalid_argument("y/n_trials/offset/beta0 must be 1D");
+  if (static_cast<int>(yb.shape[0]) != n ||
+      static_cast<int>(nb.shape[0]) != n ||
+      static_cast<int>(ob.shape[0]) != n)
+    throw std::invalid_argument("y/n_trials/offset length must match X.rows()");
+  if (static_cast<int>(bb.shape[0]) != p)
+    throw std::invalid_argument("beta0 length must match X.cols()");
+
+  Eigen::Map<const Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> X_e(
+      static_cast<const double*>(Xb.ptr), n, p);
+  Eigen::Map<const Eigen::VectorXd> y_e(static_cast<const double*>(yb.ptr), n);
+  Eigen::Map<const Eigen::VectorXd> n_e(static_cast<const double*>(nb.ptr), n);
+  Eigen::Map<const Eigen::VectorXd> off_e(static_cast<const double*>(ob.ptr), n);
+  Eigen::Map<const Eigen::VectorXd> b0_e(static_cast<const double*>(bb.ptr), p);
+
+  const Eigen::VectorXi stdmask = parse_standardize_mask(standardize_obj, p);
+
   return glm_binomial_without_intercept(
       X_e, y_e, n_e, off_e,
       b0_e, stdmask,
@@ -153,12 +179,14 @@ GLMPoissonResult glm_poisson_with_intercept_py(
     py::array_t<double, py::array::c_style | py::array::forcecast> offset,
     double intercept0,
     py::array_t<double, py::array::c_style | py::array::forcecast> beta0,
-    py::object standardize_obj,  // None or int array
+    py::object standardize_obj,
     int max_iter,
     double tol,
     double ridge,
     double eps_mu) {
-std::feclearexcept(FE_ALL_EXCEPT);
+
+  std::feclearexcept(FE_ALL_EXCEPT);
+
   auto Xb = X.request();
   if (Xb.ndim != 2) throw std::invalid_argument("X must be 2D");
   const int n = static_cast<int>(Xb.shape[0]);
@@ -196,12 +224,14 @@ GLMPoissonResult glm_poisson_without_intercept_py(
     py::array_t<double, py::array::c_style | py::array::forcecast> y,
     py::array_t<double, py::array::c_style | py::array::forcecast> offset,
     py::array_t<double, py::array::c_style | py::array::forcecast> beta0,
-    py::object standardize_obj,  // None or int array
+    py::object standardize_obj,
     int max_iter,
     double tol,
     double ridge,
     double eps_mu) {
-std::feclearexcept(FE_ALL_EXCEPT);
+
+  std::feclearexcept(FE_ALL_EXCEPT);
+
   auto Xb = X.request();
   if (Xb.ndim != 2) throw std::invalid_argument("X must be 2D");
   const int n = static_cast<int>(Xb.shape[0]);
@@ -233,35 +263,6 @@ std::feclearexcept(FE_ALL_EXCEPT);
       max_iter, tol, ridge, eps_mu);
 }
 
-//
-static Eigen::VectorXi default_penalty_mask(int p) {
-  Eigen::VectorXi m(p);
-  if (p <= 0) return m;
-  m.setOnes();        // default: penalize all beta
-  return m;
-}
-
-static Eigen::VectorXi parse_penalty_mask(py::object penalty_obj, int p) {
-  Eigen::VectorXi penmask;
-
-  if (penalty_obj.is_none()) {
-    penmask = default_penalty_mask(p);
-    return penmask;
-  }
-
-  py::array_t<int, py::array::c_style | py::array::forcecast> penalty =
-      penalty_obj.cast<py::array_t<int, py::array::c_style | py::array::forcecast>>();
-  auto pb = penalty.request();
-
-  if (pb.ndim != 1) throw std::invalid_argument("penalty must be 1D");
-  if (static_cast<int>(pb.shape[0]) != p)
-    throw std::invalid_argument("penalty length must match X.cols()");
-
-  Eigen::Map<const Eigen::VectorXi> p_e(static_cast<const int*>(pb.ptr), p);
-  penmask = p_e;
-  return penmask;
-}
-
 GLMBinomialENetResult glm_binomial_elasticnet_with_intercept_py(
     py::array_t<double, py::array::c_style | py::array::forcecast> X,
     py::array_t<double, py::array::c_style | py::array::forcecast> y,
@@ -279,7 +280,9 @@ GLMBinomialENetResult glm_binomial_elasticnet_with_intercept_py(
     double ridge,
     double eps_mu,
     double eps_dmu) {
-std::feclearexcept(FE_ALL_EXCEPT);
+
+  std::feclearexcept(FE_ALL_EXCEPT);
+
   auto Xb = X.request();
   if (Xb.ndim != 2) throw std::invalid_argument("X must be 2D");
   const int n = static_cast<int>(Xb.shape[0]);
@@ -309,7 +312,6 @@ std::feclearexcept(FE_ALL_EXCEPT);
   const Eigen::VectorXi stdmask = parse_standardize_mask(standardize_obj, p);
   const Eigen::VectorXi penmask = parse_penalty_mask(penalty_obj, p);
 
-  // return the C++ core result directly
   return glm_binomial_elasticnet_with_intercept(
       X_e, y_e, n_e, off_e,
       intercept0, b0_e, stdmask, penmask,
@@ -333,7 +335,9 @@ GLMBinomialENetResult glm_binomial_elasticnet_without_intercept_py(
     double ridge,
     double eps_mu,
     double eps_dmu) {
-std::feclearexcept(FE_ALL_EXCEPT);
+
+  std::feclearexcept(FE_ALL_EXCEPT);
+
   auto Xb = X.request();
   if (Xb.ndim != 2) throw std::invalid_argument("X must be 2D");
   const int n = static_cast<int>(Xb.shape[0]);
@@ -346,12 +350,10 @@ std::feclearexcept(FE_ALL_EXCEPT);
 
   if (yb.ndim != 1 || nb.ndim != 1 || ob.ndim != 1 || bb.ndim != 1)
     throw std::invalid_argument("y/n_trials/offset/beta0 must be 1D");
-
   if (static_cast<int>(yb.shape[0]) != n ||
       static_cast<int>(nb.shape[0]) != n ||
       static_cast<int>(ob.shape[0]) != n)
     throw std::invalid_argument("y/n_trials/offset length must match X.rows()");
-
   if (static_cast<int>(bb.shape[0]) != p)
     throw std::invalid_argument("beta0 length must match X.cols()");
 
@@ -388,7 +390,9 @@ GLMPoissonENetResult glm_poisson_elasticnet_with_intercept_py(
     double lambd,
     double ridge,
     double eps_mu) {
-std::feclearexcept(FE_ALL_EXCEPT);
+
+  std::feclearexcept(FE_ALL_EXCEPT);
+
   auto Xb = X.request();
   if (Xb.ndim != 2) throw std::invalid_argument("X must be 2D");
   const int n = static_cast<int>(Xb.shape[0]);
@@ -414,6 +418,14 @@ std::feclearexcept(FE_ALL_EXCEPT);
 
   const Eigen::VectorXi stdmask = parse_standardize_mask(standardize_obj, p);
   const Eigen::VectorXi penmask = parse_penalty_mask(penalty_obj, p);
+
+  if (alpha == 0.0) {
+    return glm_poisson_with_intercept_from_elasticnet_alpha0(
+        X_e, y_e, off_e,
+        intercept0, b0_e,
+        stdmask, penmask,
+        max_iter, tol, lambd, ridge, eps_mu);
+  }
 
   return glm_poisson_elasticnet_with_intercept(
       X_e, y_e, off_e,
@@ -436,7 +448,9 @@ GLMPoissonENetResult glm_poisson_elasticnet_without_intercept_py(
     double lambd,
     double ridge,
     double eps_mu) {
-std::feclearexcept(FE_ALL_EXCEPT);
+
+  std::feclearexcept(FE_ALL_EXCEPT);
+
   auto Xb = X.request();
   if (Xb.ndim != 2) throw std::invalid_argument("X must be 2D");
   const int n = static_cast<int>(Xb.shape[0]);
@@ -462,6 +476,14 @@ std::feclearexcept(FE_ALL_EXCEPT);
 
   const Eigen::VectorXi stdmask = parse_standardize_mask(standardize_obj, p);
   const Eigen::VectorXi penmask = parse_penalty_mask(penalty_obj, p);
+
+  if (alpha == 0.0) {
+    return glm_poisson_without_intercept_from_elasticnet_alpha0(
+        X_e, y_e, off_e,
+        b0_e,
+        stdmask, penmask,
+        max_iter, tol, lambd, ridge, eps_mu);
+  }
 
   return glm_poisson_elasticnet_without_intercept(
       X_e, y_e, off_e,
@@ -548,7 +570,6 @@ void bind_glm(py::module_& m) {
         py::arg("eps_mu") = 1e-15,
         py::arg("eps_dmu") = 1e-15);
 
-  // ---- Result class bind ----
   py::class_<GLMPoissonENetResult>(m, "GLMPoissonENetResult")
       .def_readonly("intercept", &GLMPoissonENetResult::intercept)
       .def_readonly("beta", &GLMPoissonENetResult::beta)
@@ -558,8 +579,6 @@ void bind_glm(py::module_& m) {
       .def_readonly("max_delta", &GLMPoissonENetResult::max_delta)
       .def_readonly("max_delta_inner", &GLMPoissonENetResult::max_delta_inner);
 
-
-  // ---- with intercept ----
   m.def("glm_poisson_elasticnet_with_intercept",
         &glm_poisson_elasticnet_with_intercept_py,
         py::arg("X"),
@@ -576,8 +595,6 @@ void bind_glm(py::module_& m) {
         py::arg("ridge") = 1e-12,
         py::arg("eps_mu") = 1e-15);
 
-
-  // ---- without intercept ----
   m.def("glm_poisson_elasticnet_without_intercept",
         &glm_poisson_elasticnet_without_intercept_py,
         py::arg("X"),

@@ -1,18 +1,29 @@
 // glm_poisson_elasticnet_with_intercept.cpp
 //
-// ElasticNet Poisson GLM via IRLS (outer) + Coordinate Descent (inner)
-// - y: counts (>=0)
-// - log link: eta = intercept + X*beta + offset
-// - standardize mask (0/1, length p):
-//     1 -> center+scale column j (recommended when fitting intercept separately)
-//     0 -> leave as-is
-// - penalty_mask (0/1, length p): 1 -> penalize beta_j, 0 -> do not penalize beta_j
-// - intercept is explicit parameter (never penalized)
+// Poisson GLM with per-coordinate Elastic Net penalties
+// via IRLS (outer) + Coordinate Descent (inner)
 //
-// Fixes vs previous version:
-//   1) clip-consistent eta/mu/z: mu = exp(clip(eta)), z uses eta_clip (log(mu))
-//   2) optional step-halving on penalized objective for IRLS stability
-//   3) correct n_outer tracking
+// Model:
+//   y_i ~ Poisson(mu_i)
+//   log(mu_i) = intercept + x_i^T beta + offset_i
+//
+// API:
+// - standardize[j] = 1 -> center+scale column j before fitting
+// - standardize[j] = 0 -> leave column j as-is
+// - lambda_l1[j] >= 0 : L1 penalty for beta_j in standardized space
+// - lambda_l2[j] >= 0 : L2 penalty for beta_j in standardized space
+// - intercept is explicit and never penalized
+//
+// Penalized objective in standardized space:
+//   ll(beta0, beta)
+//   - sum_j lambda_l1[j] * |beta_j|
+//   - 0.5 * sum_j lambda_l2[j] * beta_j^2
+//
+// Notes:
+// 1) clip-consistent eta/mu/z: mu = exp(clip(eta)), z uses eta_clip (= log(mu))
+// 2) optional step-halving on penalized objective for IRLS stability
+// 3) correct n_outer tracking
+// 4) faster inner CD via delta update and cached u = W .* r
 
 #include <Eigen/Dense>
 #include <algorithm>
@@ -42,19 +53,17 @@ struct GLMPoissonENetResult {
   double max_delta_inner = 0.0; // last inner sweep max(|Δintercept|, max|Δbeta|)
 };
 
-GLMPoissonENetResult glm_poisson_elasticnet_with_intercept(
+GLMPoissonENetResult glm_poisson_elasticnet_with_intercept_core(
     const Eigen::MatrixXd& X,
     const Eigen::VectorXd& y,
     const Eigen::VectorXd& offset,
     double intercept0,
     const Eigen::VectorXd& beta0,
     const Eigen::VectorXi& standardize,   // 0/1 length p (center+scale)
-    const Eigen::VectorXi& penalty_mask,  // 0/1 length p (beta only)
+    const Eigen::VectorXd& lambda_l1,     // length p, >= 0
+    const Eigen::VectorXd& lambda_l2,     // length p, >= 0
     int max_iter,
     double tol,
-    double alpha,
-    double lambd,
-    double ridge,
     double eps_mu) {
 
   const int n = static_cast<int>(X.rows());
@@ -69,8 +78,19 @@ GLMPoissonENetResult glm_poisson_elasticnet_with_intercept(
   if (standardize.size() != p) {
     throw std::invalid_argument("standardize length must match X.cols()");
   }
-  if (penalty_mask.size() != p) {
-    throw std::invalid_argument("penalty_mask length must match X.cols()");
+  if (lambda_l1.size() != p) {
+    throw std::invalid_argument("lambda_l1 length must match X.cols()");
+  }
+  if (lambda_l2.size() != p) {
+    throw std::invalid_argument("lambda_l2 length must match X.cols()");
+  }
+  for (int j = 0; j < p; ++j) {
+    if (!(lambda_l1[j] >= 0.0) || !std::isfinite(lambda_l1[j])) {
+      throw std::invalid_argument("lambda_l1 must be finite and >= 0");
+    }
+    if (!(lambda_l2[j] >= 0.0) || !std::isfinite(lambda_l2[j])) {
+      throw std::invalid_argument("lambda_l2 must be finite and >= 0");
+    }
   }
   if (max_iter <= 0) {
     GLMPoissonENetResult out;
@@ -83,12 +103,6 @@ GLMPoissonENetResult glm_poisson_elasticnet_with_intercept(
     out.max_delta_inner = 0.0;
     return out;
   }
-  if (!(alpha >= 0.0 && alpha <= 1.0)) {
-    throw std::invalid_argument("alpha must be in [0,1]");
-  }
-  if (!(lambd >= 0.0) || !std::isfinite(lambd)) {
-    throw std::invalid_argument("lambd must be finite and >= 0");
-  }
   if (!(tol > 0.0) || !std::isfinite(tol)) {
     throw std::invalid_argument("tol must be positive finite");
   }
@@ -96,12 +110,7 @@ GLMPoissonENetResult glm_poisson_elasticnet_with_intercept(
     throw std::invalid_argument("eps_mu must be positive finite");
   }
 
-  // Penalties in standardized space
-  const double l1 = alpha * lambd;
-  const double l2 = (1.0 - alpha) * lambd + ridge;
-
   const double tiny_sd = 1e-12;
-  auto is_penalized = [&](int j) -> bool { return (penalty_mask[j] != 0); };
 
   // -------- Standardize X -> Xs (center+scale where standardize[j]==1) --------
   Eigen::VectorXd x_mean(p);
@@ -154,7 +163,6 @@ GLMPoissonENetResult glm_poisson_elasticnet_with_intercept(
 
   // Penalized objective in standardized space (for step-halving)
   auto penalized_obj = [&](double b0_try, const Eigen::VectorXd& beta_try) -> double {
-    // llf uses clip-consistent eta/mu
     eta.noalias() = Xs * beta_try;
     eta.array() += offset.array();
     eta.array() += b0_try;
@@ -163,20 +171,15 @@ GLMPoissonENetResult glm_poisson_elasticnet_with_intercept(
     for (int i = 0; i < n; ++i) {
       const double e = clip(eta[i], eta_lo, eta_hi);
       const double m = std::max(std::exp(e), eps_mu);
-      // y*eta - mu - log(y!)
       llf += y[i] * e - m - std::lgamma(y[i] + 1.0);
     }
 
-    double l1sum = 0.0;
-    double l2sum = 0.0;
+    double pen = 0.0;
     for (int j = 0; j < p; ++j) {
-      if (is_penalized(j)) {
-        const double bj = beta_try[j];
-        l1sum += std::abs(bj);
-        l2sum += bj * bj;
-      }
+      const double bj = beta_try[j];
+      pen += lambda_l1[j] * std::abs(bj) + 0.5 * lambda_l2[j] * bj * bj;
     }
-    return llf - l1 * l1sum - 0.5 * l2 * l2sum;
+    return llf - pen;
   };
 
   bool converged = false;
@@ -224,17 +227,25 @@ GLMPoissonENetResult glm_poisson_elasticnet_with_intercept(
     Eigen::VectorXd r = ytilde - (Xs * beta);
     r.array() -= intercept;
 
-    // Precompute aj = sum_i W_i x_ij^2 (+ l2 if penalized)
-    Eigen::VectorXd aj(p);
+    // u = W .* r
+    Eigen::VectorXd u = W.array() * r.array();
+
+    // Precompute:
+    //   aj_x[j] = sum_i W_i x_ij^2
+    //   aj[j]   = aj_x[j] + lambda_l2[j]
+    Eigen::VectorXd aj_x(p), aj(p);
     for (int j = 0; j < p; ++j) {
       double s = 0.0;
       for (int i = 0; i < n; ++i) {
         const double xij = Xs(i, j);
         s += W[i] * xij * xij;
       }
-      if (is_penalized(j)) s += l2;
-      if (!(s > 0.0) || !std::isfinite(s)) s = 1.0;
-      aj[j] = s;
+      if (!(s >= 0.0) || !std::isfinite(s)) s = 0.0;
+      aj_x[j] = s;
+
+      double a = s + lambda_l2[j];
+      if (!(a > 0.0) || !std::isfinite(a)) a = 1.0;
+      aj[j] = a;
     }
 
     const double wsum = std::max(eps_mu, W.sum());
@@ -251,14 +262,18 @@ GLMPoissonENetResult glm_poisson_elasticnet_with_intercept(
       double max_change = 0.0;
 
       // --- intercept update (unpenalized) ---
-      // minimize 0.5*sum W*(r - delta)^2 => delta = sum(W*r)/sum(W)
+      // minimize 0.5 * sum_i W_i (r_i - delta0)^2
+      // delta0 = sum_i W_i r_i / sum_i W_i = sum_i u_i / sum_i W_i
       double delta0 = 0.0;
-      for (int i = 0; i < n; ++i) delta0 += W[i] * r[i];
+      for (int i = 0; i < n; ++i) delta0 += u[i];
       delta0 /= wsum;
 
       if (delta0 != 0.0) {
         intercept_new += delta0;
-        r.array() -= delta0;
+        for (int i = 0; i < n; ++i) {
+          r[i] -= delta0;
+          u[i] -= W[i] * delta0;
+        }
       }
       max_change = std::max(max_change, std::abs(delta0));
 
@@ -266,32 +281,27 @@ GLMPoissonENetResult glm_poisson_elasticnet_with_intercept(
       for (int j = 0; j < p; ++j) {
         const double bj_old = beta_new[j];
 
-        // r += x_j * bj_old
-        if (bj_old != 0.0) {
-          for (int i = 0; i < n; ++i) r[i] += Xs(i, j) * bj_old;
-        }
-
-        // rho = x_j^T W r
-        double rho = 0.0;
+        // With full residual r = ytilde - intercept - X beta,
+        // rho_j = x_j^T (W .* r) + (x_j^T W x_j) * beta_j
+        double xTu = 0.0;
         for (int i = 0; i < n; ++i) {
-          rho += W[i] * Xs(i, j) * r[i];
+          xTu += Xs(i, j) * u[i];
         }
 
-        double bj_new;
-        if (is_penalized(j)) {
-          bj_new = soft_threshold(rho, l1) / aj[j];
-        } else {
-          bj_new = rho / aj[j];
+        const double rho = xTu + aj_x[j] * bj_old;
+        const double bj_new = soft_threshold(rho, lambda_l1[j]) / aj[j];
+        const double delta = bj_new - bj_old;
+
+        if (delta != 0.0) {
+          for (int i = 0; i < n; ++i) {
+            const double xij = Xs(i, j);
+            r[i] -= xij * delta;
+            u[i] -= W[i] * xij * delta;
+          }
+          beta_new[j] = bj_new;
         }
 
-        // r -= x_j * bj_new
-        if (bj_new != 0.0) {
-          for (int i = 0; i < n; ++i) r[i] -= Xs(i, j) * bj_new;
-        }
-
-        beta_new[j] = bj_new;
-
-        const double ch = std::abs(bj_new - bj_old);
+        const double ch = std::abs(delta);
         if (ch > max_change) max_change = ch;
       }
 
@@ -302,7 +312,6 @@ GLMPoissonENetResult glm_poisson_elasticnet_with_intercept(
     total_cd_sweeps += cd_sweeps_this_outer;
 
     // ---- Step-halving on penalized objective (outer stability) ----
-    // Sometimes IRLS can overshoot even if inner WLS is solved well.
     const double step_obj_old = obj_old;
 
     double step = 1.0;
@@ -351,6 +360,7 @@ GLMPoissonENetResult glm_poisson_elasticnet_with_intercept(
   for (int j = 0; j < p; ++j) {
     if (standardize[j] != 0) beta_out[j] = beta[j] / x_scale[j];
   }
+
   double intercept_out = intercept;
   for (int j = 0; j < p; ++j) {
     if (standardize[j] != 0) intercept_out -= x_mean[j] * beta_out[j];

@@ -1,17 +1,19 @@
 // glm_binomial_elasticnet_without_intercept.cpp
-// ElasticNet Binomial GLM via IRLS (outer) + Coordinate Descent (inner)
+// Binomial GLM without intercept, with per-coordinate Elastic Net penalties
+// via IRLS (outer) + Coordinate Descent (inner)
+//
 // - aggregated binomial: y = success counts, n_trials = totals
-// - NO intercept term: eta = Xs*beta + offset
-// - penalty_mask applies to beta entries
+// - NO intercept term: eta = Xs * beta + offset
 // - standardize mask (0/1, length p):
 //     1 -> scale-only (NO centering; centering would change the model without intercept)
 //     0 -> leave column as-is
 //
-// Return: GLMBinomialENetResult with convergence info (outer/inner iters, max deltas)
+// Penalized objective in standardized space:
+//   ll(beta)
+//   - sum_j lambda_l1[j] * |beta_j|
+//   - 0.5 * sum_j lambda_l2[j] * beta_j^2
 //
-// Penalty in standardized space:
-//   L1 = alpha*lambd
-//   L2 = (1-alpha)*lambd + ridge
+// Return: GLMBinomialENetResult with convergence info.
 
 #include <Eigen/Dense>
 #include <algorithm>
@@ -39,20 +41,18 @@ struct GLMBinomialENetResult {
   double max_delta_inner = 0.0; // last inner sweep max|Δbeta|
 };
 
-GLMBinomialENetResult glm_binomial_elasticnet_without_intercept(
+GLMBinomialENetResult glm_binomial_elasticnet_without_intercept_core(
     const Eigen::MatrixXd& X,
     const Eigen::VectorXd& y,          // successes
     const Eigen::VectorXd& n_trials,   // totals
     const Eigen::VectorXd& offset,
     const Eigen::VectorXd& beta0,
     const Eigen::VectorXi& standardize,   // 0/1 length p (scale-only)
-    const Eigen::VectorXi& penalty_mask,  // 0/1 length p
+    const Eigen::VectorXd& lambda_l1,     // length p, >= 0
+    const Eigen::VectorXd& lambda_l2,     // length p, >= 0
     int max_iter,
     double tol,
     const std::string& link,
-    double alpha,
-    double lambd,
-    double ridge,
     double eps_mu,
     double eps_dmu) {
 
@@ -68,8 +68,19 @@ GLMBinomialENetResult glm_binomial_elasticnet_without_intercept(
   if (standardize.size() != p) {
     throw std::invalid_argument("standardize length must match X.cols()");
   }
-  if (penalty_mask.size() != p) {
-    throw std::invalid_argument("penalty_mask length must match X.cols()");
+  if (lambda_l1.size() != p) {
+    throw std::invalid_argument("lambda_l1 length must match X.cols()");
+  }
+  if (lambda_l2.size() != p) {
+    throw std::invalid_argument("lambda_l2 length must match X.cols()");
+  }
+  for (int j = 0; j < p; ++j) {
+    if (!(lambda_l1[j] >= 0.0) || !std::isfinite(lambda_l1[j])) {
+      throw std::invalid_argument("lambda_l1 must be finite and >= 0");
+    }
+    if (!(lambda_l2[j] >= 0.0) || !std::isfinite(lambda_l2[j])) {
+      throw std::invalid_argument("lambda_l2 must be finite and >= 0");
+    }
   }
   if (max_iter <= 0) {
     GLMBinomialENetResult out;
@@ -82,23 +93,17 @@ GLMBinomialENetResult glm_binomial_elasticnet_without_intercept(
     out.max_delta_inner = 0.0;
     return out;
   }
-  if (!(alpha >= 0.0 && alpha <= 1.0)) {
-    throw std::invalid_argument("alpha must be in [0,1]");
-  }
-  if (!(lambd >= 0.0)) {
-    throw std::invalid_argument("lambd must be >= 0");
-  }
   if (!(tol > 0.0) || !std::isfinite(tol)) {
     throw std::invalid_argument("tol must be positive finite");
   }
+  if (!(eps_mu > 0.0) || !std::isfinite(eps_mu)) {
+    throw std::invalid_argument("eps_mu must be positive finite");
+  }
+  if (!(eps_dmu > 0.0) || !std::isfinite(eps_dmu)) {
+    throw std::invalid_argument("eps_dmu must be positive finite");
+  }
 
-  const double l1 = alpha * lambd;
-  const double l2 = (1.0 - alpha) * lambd + ridge;
   const double tiny_sd = 1e-12;
-
-  auto is_penalized = [&](int j) -> bool {
-    return (penalty_mask[j] != 0);
-  };
 
   // ---------- Standardize X according to mask (scale-only, NO centering) ----------
   Eigen::VectorXd x_scale = Eigen::VectorXd::Ones(p);
@@ -106,19 +111,20 @@ GLMBinomialENetResult glm_binomial_elasticnet_without_intercept(
 
   for (int j = 0; j < p; ++j) {
     if (standardize[j] != 0) {
-      // scale based on RMS around 0 (not centered)
+      // scale-only: use RMS around 0 (not centered), so the no-intercept model is preserved
       const Eigen::ArrayXd xc = X.col(j).array();
       const double sd = std::sqrt((xc * xc).mean());
       if (!std::isfinite(sd) || sd < tiny_sd) {
-        throw std::invalid_argument("Cannot scale (near-)constant/zero column j=" + std::to_string(j));
+        throw std::invalid_argument(
+            "Cannot scale (near-)constant/zero column j=" + std::to_string(j));
       }
       x_scale[j] = sd;
-      Xs.col(j).array() = Xs.col(j).array() / sd;
+      Xs.col(j).array() /= sd;
     }
   }
 
   // ---------- Initialize in standardized parameterization ----------
-  // If Xs = X / sd, then keep eta = X*beta0 = (X/sd)*(beta0*sd)
+  // If Xs = X / sd, then preserve eta = X * beta0 = (X / sd) * (beta0 * sd)
   Eigen::VectorXd beta = beta0;
   for (int j = 0; j < p; ++j) {
     if (standardize[j] != 0) beta[j] = beta0[j] * x_scale[j];
@@ -131,16 +137,47 @@ GLMBinomialENetResult glm_binomial_elasticnet_without_intercept(
   const int cd_max_iter = 300;
   const double cd_tol = std::max(1e-12, tol * 0.1);
 
+  // Penalized objective in standardized space (for step-halving)
+  auto penalized_obj = [&](const Eigen::VectorXd& beta_try) -> double {
+    eta.noalias() = Xs * beta_try;
+    eta.array() += offset.array();
+
+    LinkEval::eval(link, eta, mu, dmu);
+
+    double llf = 0.0;
+    for (int i = 0; i < n; ++i) {
+      double ni = n_trials[i];
+      if (!(ni >= 0.0) || !std::isfinite(ni)) {
+        throw std::invalid_argument("n_trials must be finite and >= 0");
+      }
+
+      const double mui = std::min(std::max(mu[i], eps_mu), 1.0 - eps_mu);
+      const double yi = y[i];
+
+      // aggregated binomial log-likelihood up to constants wrt parameters
+      llf += yi * std::log(mui) + (ni - yi) * std::log(1.0 - mui);
+    }
+
+    double pen = 0.0;
+    for (int j = 0; j < p; ++j) {
+      const double bj = beta_try[j];
+      pen += lambda_l1[j] * std::abs(bj) + 0.5 * lambda_l2[j] * bj * bj;
+    }
+    return llf - pen;
+  };
+
   GLMBinomialENetResult info;
   info.beta = Eigen::VectorXd::Zero(p);
 
   bool converged = false;
   int total_cd_sweeps = 0;
-  double last_outer_delta = std::numeric_limits<double>::infinity();
-  double last_inner_delta = std::numeric_limits<double>::infinity();
+  double last_outer_delta = 0.0;
+  double last_inner_delta = 0.0;
+
+  double obj_old = penalized_obj(beta);
 
   for (int outer = 0; outer < max_iter; ++outer) {
-    // ---- IRLS: eta/mu/dmu ----
+    // ---- IRLS: eta / mu / dmu ----
     eta.noalias() = Xs * beta;
     eta.array() += offset.array();
 
@@ -163,7 +200,7 @@ GLMBinomialENetResult glm_binomial_elasticnet_without_intercept(
       W[i] = wi;
     }
 
-    // z = eta + (y - n*mu)/(n*dmu)  (if n<=0 -> keep z=eta)
+    // z = eta + (y - n*mu)/(n*dmu), if n<=0 keep z=eta
     z = eta;
     for (int i = 0; i < n; ++i) {
       double ni = n_trials[i];
@@ -176,23 +213,27 @@ GLMBinomialENetResult glm_binomial_elasticnet_without_intercept(
     const Eigen::VectorXd ytilde = z - offset;
 
     // ---- inner: CD on penalized WLS (no intercept) ----
-    // Solve: min_beta 0.5*sum_i W_i (ytilde_i - x_i^T beta)^2
-    //         + l1*|beta|_1 + 0.5*l2*||beta||_2^2 (only for penalized entries)
-    //
-    // residual r = ytilde - Xs*beta
+    // residual r = ytilde - Xs * beta
     Eigen::VectorXd r = ytilde - (Xs * beta);
 
-    // aj = sum_i W_i x_ij^2 (+ l2 if penalized)
-    Eigen::VectorXd aj(p);
+    // u = W .* r
+    Eigen::VectorXd u = W.array() * r.array();
+
+    // aj_x = sum_i W_i x_ij^2
+    // aj   = aj_x + lambda_l2[j]
+    Eigen::VectorXd aj_x(p), aj(p);
     for (int j = 0; j < p; ++j) {
       double s = 0.0;
       for (int i = 0; i < n; ++i) {
         const double xij = Xs(i, j);
         s += W[i] * xij * xij;
       }
-      if (is_penalized(j)) s += l2;
-      if (!(s > 0.0) || !std::isfinite(s)) s = 1.0;
-      aj[j] = s;
+      if (!(s >= 0.0) || !std::isfinite(s)) s = 0.0;
+      aj_x[j] = s;
+
+      double a = s + lambda_l2[j];
+      if (!(a > 0.0) || !std::isfinite(a)) a = 1.0;
+      aj[j] = a;
     }
 
     Eigen::VectorXd beta_new = beta;
@@ -208,32 +249,27 @@ GLMBinomialENetResult glm_binomial_elasticnet_without_intercept(
       for (int j = 0; j < p; ++j) {
         const double bj_old = beta_new[j];
 
-        // r += x_j * bj_old
-        if (bj_old != 0.0) {
-          for (int i = 0; i < n; ++i) r[i] += Xs(i, j) * bj_old;
-        }
-
-        // rho = x_j^T W r
-        double rho = 0.0;
+        // With full residual r = ytilde - X beta,
+        // rho_j = x_j^T (W .* r) + (x_j^T W x_j) * beta_j
+        double xTu = 0.0;
         for (int i = 0; i < n; ++i) {
-          rho += W[i] * Xs(i, j) * r[i];
+          xTu += Xs(i, j) * u[i];
         }
 
-        double bj_new;
-        if (is_penalized(j)) {
-          bj_new = soft_threshold(rho, l1) / aj[j];
-        } else {
-          bj_new = rho / aj[j];
+        const double rho = xTu + aj_x[j] * bj_old;
+        const double bj_new = soft_threshold(rho, lambda_l1[j]) / aj[j];
+        const double delta = bj_new - bj_old;
+
+        if (delta != 0.0) {
+          for (int i = 0; i < n; ++i) {
+            const double xij = Xs(i, j);
+            r[i] -= xij * delta;
+            u[i] -= W[i] * xij * delta;
+          }
+          beta_new[j] = bj_new;
         }
 
-        // r -= x_j * bj_new
-        if (bj_new != 0.0) {
-          for (int i = 0; i < n; ++i) r[i] -= Xs(i, j) * bj_new;
-        }
-
-        beta_new[j] = bj_new;
-
-        const double ch = std::abs(bj_new - bj_old);
+        const double ch = std::abs(delta);
         if (ch > max_change) max_change = ch;
       }
 
@@ -243,16 +279,36 @@ GLMBinomialENetResult glm_binomial_elasticnet_without_intercept(
 
     total_cd_sweeps += cd_sweeps_this_outer;
 
+    // ---- Step-halving on penalized objective (outer stability) ----
+    double step = 1.0;
+    double obj_new = -INFINITY;
+    Eigen::VectorXd beta_acc = beta;
+
+    const int max_halving = 25;
+    for (int hs = 0; hs < max_halving; ++hs) {
+      Eigen::VectorXd b_try = beta + step * (beta_new - beta);
+      obj_new = penalized_obj(b_try);
+
+      if (std::isfinite(obj_new) && obj_new >= obj_old - 1e-12) {
+        beta_acc = b_try;
+        break;
+      }
+      step *= 0.5;
+    }
+
     // ---- outer convergence ----
     double max_abs = 0.0;
     for (int j = 0; j < p; ++j) {
-      const double d = std::abs(beta_new[j] - beta[j]);
+      const double d = std::abs(beta_acc[j] - beta[j]);
       if (d > max_abs) max_abs = d;
     }
 
-    beta = beta_new;
+    beta = beta_acc;
+
+    if (std::isfinite(obj_new)) obj_old = obj_new;
+
     last_outer_delta = max_abs;
-    last_inner_delta = cd_last_max_change;
+    last_inner_delta = std::isfinite(cd_last_max_change) ? cd_last_max_change : 0.0;
 
     info.n_outer = outer + 1;
     info.n_inner = total_cd_sweeps;

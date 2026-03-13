@@ -9,9 +9,9 @@ pytest.importorskip("pysrat.marlib_cf1")
 
 def _sample_data():
     return NHPPData.from_intervals(
-        time=np.array([1.0, 2.0, 1.5], dtype=float),
-        fault=np.array([1, 0, 2], dtype=int),
-        type=np.array([0, 1, 0], dtype=int),
+        intervals=np.array([1.0, 2.0, 1.5], dtype=float),
+        counts=np.array([1, 0, 2], dtype=int),
+        on_boundary=np.array([0, 1, 0], dtype=int),
     )
 
 

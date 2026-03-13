@@ -1,3 +1,9 @@
+# pysrat 0.2.4
+
+- fix tests to use current `NHPPData.from_intervals` keyword arguments (`intervals`, `counts`, `on_boundary`) instead of removed legacy names (`time`, `fault`, `type`)
+- replace removed `NHPPData.from_counts` and `NHPPData.from_fault_times` calls in tests with `from_intervals`
+- add dedicated call for Poisson regression with `alpha=0` (L2-only / ridge)
+
 # pysrat 0.2.3
 
 - add `offset` argument to `fit_pr_nhpp` to override `SMetricsData.offset` at call time
