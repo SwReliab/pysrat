@@ -312,6 +312,14 @@ GLMBinomialENetResult glm_binomial_elasticnet_with_intercept_py(
   const Eigen::VectorXi stdmask = parse_standardize_mask(standardize_obj, p);
   const Eigen::VectorXi penmask = parse_penalty_mask(penalty_obj, p);
 
+  if (alpha == 0.0) {
+    return glm_binomial_with_intercept_from_elasticnet_alpha0(
+        X_e, y_e, n_e, off_e,
+        intercept0, b0_e,
+        stdmask, penmask,
+        max_iter, tol, link, lambd, ridge, eps_mu, eps_dmu);
+  }
+
   return glm_binomial_elasticnet_with_intercept(
       X_e, y_e, n_e, off_e,
       intercept0, b0_e, stdmask, penmask,
@@ -366,6 +374,14 @@ GLMBinomialENetResult glm_binomial_elasticnet_without_intercept_py(
 
   const Eigen::VectorXi stdmask = parse_standardize_mask(standardize_obj, p);
   const Eigen::VectorXi penmask = parse_penalty_mask(penalty_obj, p);
+
+  if (alpha == 0.0) {
+    return glm_binomial_without_intercept_from_elasticnet_alpha0(
+        X_e, y_e, n_e, off_e,
+        b0_e,
+        stdmask, penmask,
+        max_iter, tol, link, lambd, ridge, eps_mu, eps_dmu);
+  }
 
   return glm_binomial_elasticnet_without_intercept(
       X_e, y_e, n_e, off_e,

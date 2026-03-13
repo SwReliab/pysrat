@@ -1,21 +1,25 @@
 // glm_poisson.cpp
 // Poisson GLM (log link) via IRLS (outer) + WLS solve (inner)
-// with per-coordinate L2 penalties.
+// with correlated L2 penalties.
 //
 // - offset is added to linear predictor: eta = intercept + X*beta + offset
 // - with_intercept: standardize[j]==1 -> center+scale; standardize[j]==0 -> leave column as-is
 // - without_intercept: standardize[j]==1 -> scale only (NO centering); standardize[j]==0 -> leave column as-is
 //
 // Penalty in standardized space:
-//   0.5 * sum_j lambda_l2_vec[j] * beta_j^2
+//   0.5 * beta^T lambda_l2_mat * beta
+//
+// where lambda_l2_mat is p x p, symmetric, positive semidefinite.
 //
 // Return: GLMPoissonResult { intercept, beta, converged, n_iter }
 
 #include <Eigen/Dense>
 #include <Eigen/Cholesky>
 #include <Eigen/QR>
+#include <Eigen/Eigenvalues>
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <stdexcept>
 #include <string>
 
@@ -30,6 +34,33 @@ struct GLMPoissonResult {
   int n_iter;
 };
 
+static inline void validate_lambda_l2_mat(
+    const Eigen::MatrixXd& lambda_l2_mat,
+    int p,
+    bool check_psd = true,
+    double sym_tol = 1e-12,
+    double psd_tol = 1e-10) {
+  if (lambda_l2_mat.rows() != p || lambda_l2_mat.cols() != p) {
+    throw std::invalid_argument("lambda_l2_mat must be p x p");
+  }
+  if (!lambda_l2_mat.allFinite()) {
+    throw std::invalid_argument("lambda_l2_mat must be finite");
+  }
+  if (!lambda_l2_mat.isApprox(lambda_l2_mat.transpose(), sym_tol)) {
+    throw std::invalid_argument("lambda_l2_mat must be symmetric");
+  }
+
+  if (check_psd) {
+    Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> es(lambda_l2_mat);
+    if (es.info() != Eigen::Success) {
+      throw std::invalid_argument("Failed eigen decomposition of lambda_l2_mat");
+    }
+    if (es.eigenvalues().minCoeff() < -psd_tol) {
+      throw std::invalid_argument("lambda_l2_mat must be positive semidefinite");
+    }
+  }
+}
+
 GLMPoissonResult glm_poisson_with_intercept_core(
     const Eigen::MatrixXd& X,
     const Eigen::VectorXd& y,
@@ -37,7 +68,7 @@ GLMPoissonResult glm_poisson_with_intercept_core(
     double intercept0,
     const Eigen::VectorXd& beta0,
     const Eigen::VectorXi& standardize,
-    const Eigen::VectorXd& lambda_l2_vec,
+    const Eigen::MatrixXd& lambda_l2_mat,
     int max_iter,
     double tol,
     double eps_mu) {
@@ -54,13 +85,13 @@ GLMPoissonResult glm_poisson_with_intercept_core(
   if (standardize.size() != p) {
     throw std::invalid_argument("standardize length must match X.cols()");
   }
-  if (lambda_l2_vec.size() != p) {
-    throw std::invalid_argument("lambda_l2_vec length must match X.cols()");
+  validate_lambda_l2_mat(lambda_l2_mat, p);
+
+  if (!(tol > 0.0) || !std::isfinite(tol)) {
+    throw std::invalid_argument("tol must be finite and > 0");
   }
-  for (int j = 0; j < p; ++j) {
-    if (!(lambda_l2_vec[j] >= 0.0) || !std::isfinite(lambda_l2_vec[j])) {
-      throw std::invalid_argument("lambda_l2_vec must be finite and >= 0");
-    }
+  if (!(eps_mu > 0.0) || !std::isfinite(eps_mu)) {
+    throw std::invalid_argument("eps_mu must be finite and > 0");
   }
   if (max_iter <= 0) {
     return {intercept0, beta0, false, 0};
@@ -121,10 +152,7 @@ GLMPoissonResult glm_poisson_with_intercept_core(
       llf += y[i] * e - m - std::lgamma(y[i] + 1.0);
     }
 
-    double pen = 0.0;
-    for (int j = 0; j < p; ++j) {
-      pen += 0.5 * lambda_l2_vec[j] * beta_try[j] * beta_try[j];
-    }
+    const double pen = 0.5 * beta_try.dot(lambda_l2_mat * beta_try);
     return llf - pen;
   };
 
@@ -177,9 +205,9 @@ GLMPoissonResult glm_poisson_with_intercept_core(
         (sqrtW.array() * ytilde.array()).matrix();
 
     // Normal equations:
-    //   [1 X]^T W [1 X] + diag(0, lambda_l2_vec)
+    //   [1 X]^T W [1 X] + blockdiag(0, lambda_l2_mat)
     Eigen::MatrixXd A = Xaug_w.transpose() * Xaug_w;
-    A.diagonal().segment(1, p).array() += lambda_l2_vec.array();
+    A.block(1, 1, p, p) += lambda_l2_mat;
 
     const Eigen::VectorXd bvec = Xaug_w.transpose() * rhs;
 
@@ -196,7 +224,7 @@ GLMPoissonResult glm_poisson_with_intercept_core(
 
     // Step-halving on penalized objective
     double step = 1.0;
-    double obj_new = -INFINITY;
+    double obj_new = -std::numeric_limits<double>::infinity();
     Eigen::VectorXd beta_new = beta;
     double b0_new = b0;
 
@@ -248,7 +276,7 @@ GLMPoissonResult glm_poisson_without_intercept_core(
     const Eigen::VectorXd& offset,
     const Eigen::VectorXd& beta0,
     const Eigen::VectorXi& standardize,
-    const Eigen::VectorXd& lambda_l2_vec,
+    const Eigen::MatrixXd& lambda_l2_mat,
     int max_iter,
     double tol,
     double eps_mu) {
@@ -265,13 +293,13 @@ GLMPoissonResult glm_poisson_without_intercept_core(
   if (standardize.size() != p) {
     throw std::invalid_argument("standardize length must match X.cols()");
   }
-  if (lambda_l2_vec.size() != p) {
-    throw std::invalid_argument("lambda_l2_vec length must match X.cols()");
+  validate_lambda_l2_mat(lambda_l2_mat, p);
+
+  if (!(tol > 0.0) || !std::isfinite(tol)) {
+    throw std::invalid_argument("tol must be finite and > 0");
   }
-  for (int j = 0; j < p; ++j) {
-    if (!(lambda_l2_vec[j] >= 0.0) || !std::isfinite(lambda_l2_vec[j])) {
-      throw std::invalid_argument("lambda_l2_vec must be finite and >= 0");
-    }
+  if (!(eps_mu > 0.0) || !std::isfinite(eps_mu)) {
+    throw std::invalid_argument("eps_mu must be finite and > 0");
   }
   if (max_iter <= 0) {
     return {0.0, beta0, false, 0};
@@ -317,10 +345,7 @@ GLMPoissonResult glm_poisson_without_intercept_core(
       llf += y[i] * e - m - std::lgamma(y[i] + 1.0);
     }
 
-    double pen = 0.0;
-    for (int j = 0; j < p; ++j) {
-      pen += 0.5 * lambda_l2_vec[j] * beta_try[j] * beta_try[j];
-    }
+    const double pen = 0.5 * beta_try.dot(lambda_l2_mat * beta_try);
     return llf - pen;
   };
 
@@ -362,17 +387,20 @@ GLMPoissonResult glm_poisson_without_intercept_core(
         (sqrtW.array() * (z.array() - offset.array())).matrix();
 
     Eigen::MatrixXd A = Xw.transpose() * Xw;
-    A.diagonal().array() += lambda_l2_vec.array();
+    A += lambda_l2_mat;
     const Eigen::VectorXd bvec = Xw.transpose() * rhs;
 
     Eigen::VectorXd beta_full;
     Eigen::LDLT<Eigen::MatrixXd> ldlt(A);
-    if (ldlt.info() == Eigen::Success) beta_full = ldlt.solve(bvec);
-    else beta_full = A.colPivHouseholderQr().solve(bvec);
+    if (ldlt.info() == Eigen::Success) {
+      beta_full = ldlt.solve(bvec);
+    } else {
+      beta_full = A.colPivHouseholderQr().solve(bvec);
+    }
 
     // Step-halving
     double step = 1.0;
-    double obj_new = -INFINITY;
+    double obj_new = -std::numeric_limits<double>::infinity();
     Eigen::VectorXd beta_new = beta;
 
     const int max_halving = 25;

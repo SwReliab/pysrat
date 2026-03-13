@@ -20,7 +20,7 @@ struct GLMBinomialResult {
   int n_iter;
 };
 
-GLMBinomialResult glm_binomial_with_intercept(
+GLMBinomialResult glm_binomial_with_intercept_core(
     const Eigen::MatrixXd& X,
     const Eigen::VectorXd& y,
     const Eigen::VectorXd& n_trials,
@@ -28,16 +28,46 @@ GLMBinomialResult glm_binomial_with_intercept(
     double intercept0,
     const Eigen::VectorXd& beta0,
     const Eigen::VectorXi& standardize,
+    const Eigen::VectorXd& lambda_l2_vec,
     int max_iter,
     double tol,
     const std::string& link,
-    double ridge,
     double eps_mu,
     double eps_dmu) {
 
-  const int n = X.rows();
-  const int p = X.cols();
+  const int n = static_cast<int>(X.rows());
+  const int p = static_cast<int>(X.cols());
   const double tiny_sd = 1e-12;
+
+  if (y.size() != n || n_trials.size() != n || offset.size() != n) {
+    throw std::invalid_argument("y/n_trials/offset length must match X.rows()");
+  }
+  if (beta0.size() != p) {
+    throw std::invalid_argument("beta0 length must match X.cols()");
+  }
+  if (standardize.size() != p) {
+    throw std::invalid_argument("standardize length must match X.cols()");
+  }
+  if (lambda_l2_vec.size() != p) {
+    throw std::invalid_argument("lambda_l2_vec length must match X.cols()");
+  }
+  for (int j = 0; j < p; ++j) {
+    if (!(lambda_l2_vec[j] >= 0.0) || !std::isfinite(lambda_l2_vec[j])) {
+      throw std::invalid_argument("lambda_l2_vec must be finite and >= 0");
+    }
+  }
+  if (!(tol > 0.0) || !std::isfinite(tol)) {
+    throw std::invalid_argument("tol must be positive finite");
+  }
+  if (!(eps_mu > 0.0) || !std::isfinite(eps_mu)) {
+    throw std::invalid_argument("eps_mu must be positive finite");
+  }
+  if (!(eps_dmu > 0.0) || !std::isfinite(eps_dmu)) {
+    throw std::invalid_argument("eps_dmu must be positive finite");
+  }
+  if (max_iter <= 0) {
+    return {intercept0, beta0, false, 0};
+  }
 
   Eigen::VectorXd x_mean = Eigen::VectorXd::Zero(p);
   Eigen::VectorXd x_scale = Eigen::VectorXd::Ones(p);
@@ -47,37 +77,64 @@ GLMBinomialResult glm_binomial_with_intercept(
   for (int j = 0; j < p; ++j) {
     if (standardize[j] != 0) {
       const double m = X.col(j).mean();
-      const Eigen::ArrayXd xc = (X.col(j).array() - m);
+      const Eigen::ArrayXd xc = X.col(j).array() - m;
       const double sd = std::sqrt((xc * xc).mean());
-      if (sd < tiny_sd) throw std::invalid_argument("constant column");
+      if (!std::isfinite(sd) || sd < tiny_sd) {
+        throw std::invalid_argument("Cannot standardize (near-)constant column j=" +
+                                    std::to_string(j));
+      }
       x_mean[j] = m;
       x_scale[j] = sd;
       Xs.col(j).array() = (Xs.col(j).array() - m) / sd;
     }
   }
 
+  // --- transform initial params into standardized parameterization ---
   double b0 = intercept0;
   Eigen::VectorXd beta = beta0;
 
-  for (int j = 0; j < p; ++j)
-    if (standardize[j] != 0)
-      beta[j] *= x_scale[j];
-
-  double shift = 0.0;
-  for (int j = 0; j < p; ++j)
-    if (standardize[j] != 0)
-      shift += x_mean[j] * beta0[j];
-  b0 += shift;
+  for (int j = 0; j < p; ++j) {
+    if (standardize[j] != 0) beta[j] = beta0[j] * x_scale[j];
+  }
+  for (int j = 0; j < p; ++j) {
+    if (standardize[j] != 0) b0 += x_mean[j] * beta0[j];
+  }
 
   Eigen::VectorXd eta(n), mu(n), dmu(n), W(n), z(n);
 
+  auto obj_from = [&](double b0_try, const Eigen::VectorXd& beta_try) -> double {
+    eta.noalias() = Xs * beta_try;
+    eta.array() += b0_try;
+    eta.array() += offset.array();
+
+    LinkEval::eval(link, eta, mu, dmu);
+
+    double llf = 0.0;
+    for (int i = 0; i < n; ++i) {
+      double ni = n_trials[i];
+      if (!(ni >= 0.0) || !std::isfinite(ni)) {
+        throw std::invalid_argument("n_trials must be finite and >= 0");
+      }
+
+      const double mui = clip(mu[i], eps_mu, 1.0 - eps_mu);
+      llf += y[i] * std::log(mui) + (ni - y[i]) * std::log(1.0 - mui);
+    }
+
+    double pen = 0.0;
+    for (int j = 0; j < p; ++j) {
+      pen += 0.5 * lambda_l2_vec[j] * beta_try[j] * beta_try[j];
+    }
+    return llf - pen;
+  };
+
   bool converged = false;
   int it = 0;
+  double obj_old = obj_from(b0, beta);
 
   for (; it < max_iter; ++it) {
-
-    eta = Xs * beta + offset;
+    eta.noalias() = Xs * beta;
     eta.array() += b0;
+    eta.array() += offset.array();
 
     LinkEval::eval(link, eta, mu, dmu);
 
@@ -86,48 +143,90 @@ GLMBinomialResult glm_binomial_with_intercept(
       dmu[i] = std::max(dmu[i], eps_dmu);
     }
 
+    // W = n * dmu^2 / (mu(1-mu))
     for (int i = 0; i < n; ++i) {
-      const double ni = std::max(n_trials[i], 0.0);
+      double ni = n_trials[i];
+      if (!(ni > 0.0) || !std::isfinite(ni)) ni = 0.0;
+
       const double denom = mu[i] * (1.0 - mu[i]);
-      W[i] = std::max(ni * dmu[i] * dmu[i] / denom, eps_mu);
+      double wi = (ni > 0.0) ? (ni * dmu[i] * dmu[i] / denom) : eps_mu;
+      if (!(wi > 0.0) || !std::isfinite(wi)) wi = eps_mu;
+      if (wi < eps_mu) wi = eps_mu;
+      W[i] = wi;
     }
 
+    // z = eta + (y - n*mu)/(n*dmu)  (if n<=0 -> keep z=eta)
     z = eta;
     for (int i = 0; i < n; ++i) {
-      if (n_trials[i] > 0.0)
-        z[i] += (y[i] - n_trials[i] * mu[i]) /
-                (n_trials[i] * dmu[i]);
+      double ni = n_trials[i];
+      if (!(ni > 0.0) || !std::isfinite(ni)) ni = 0.0;
+      if (ni > 0.0) {
+        z[i] += (y[i] - ni * mu[i]) / (ni * dmu[i]);
+      }
     }
 
-    Eigen::VectorXd sqrtW = W.array().sqrt();
-    Eigen::MatrixXd Xw = Xs;
-    for (int i = 0; i < n; ++i)
-      Xw.row(i) *= sqrtW[i];
+    // weighted least squares target:
+    //   z - offset ~= intercept + Xs * beta
+    const Eigen::VectorXd ytilde = z - offset;
+    const Eigen::VectorXd sqrtW = W.array().sqrt();
 
-    Eigen::VectorXd rhs =
-      (sqrtW.array() * ((z - offset).array() - b0)).matrix();
+    // augmented weighted design [1, Xs]
+    Eigen::MatrixXd Xaug_w(n, p + 1);
+    for (int i = 0; i < n; ++i) {
+      Xaug_w(i, 0) = sqrtW[i];
+    }
+    Xaug_w.block(0, 1, n, p) = Xs;
+    for (int i = 0; i < n; ++i) {
+      Xaug_w.row(i).segment(1, p) *= sqrtW[i];
+    }
 
-    Eigen::MatrixXd A = Xw.transpose() * Xw;
-    A.diagonal().array() += ridge;
+    const Eigen::VectorXd rhs = (sqrtW.array() * ytilde.array()).matrix();
 
-    Eigen::VectorXd beta_new =
-        A.ldlt().solve(Xw.transpose() * rhs);
+    // normal equations with intercept unpenalized
+    Eigen::MatrixXd A = Xaug_w.transpose() * Xaug_w;
+    A.diagonal().segment(1, p).array() += lambda_l2_vec.array();
 
-    double sw = W.sum();
+    const Eigen::VectorXd bvec = Xaug_w.transpose() * rhs;
+
+    Eigen::VectorXd theta_full(p + 1);
+    Eigen::LDLT<Eigen::MatrixXd> ldlt(A);
+    if (ldlt.info() == Eigen::Success) {
+      theta_full = ldlt.solve(bvec);
+    } else {
+      theta_full = A.colPivHouseholderQr().solve(bvec);
+    }
+
+    const double b0_full = theta_full[0];
+    const Eigen::VectorXd beta_full = theta_full.tail(p);
+
+    // step-halving on penalized objective
+    double step = 1.0;
+    double obj_new = -INFINITY;
     double b0_new = b0;
-    if (sw > 0.0) {
-      Eigen::VectorXd r = z - offset - Xs * beta_new;
-      b0_new = (W.array() * r.array()).sum() / sw;
+    Eigen::VectorXd beta_new = beta;
+
+    const int max_halving = 25;
+    for (int hs = 0; hs < max_halving; ++hs) {
+      b0_new = b0 + step * (b0_full - b0);
+      beta_new = beta + step * (beta_full - beta);
+
+      obj_new = obj_from(b0_new, beta_new);
+
+      if (std::isfinite(obj_new) && obj_new >= obj_old - 1e-12) {
+        break;
+      }
+      step *= 0.5;
     }
 
-    double diff =
-        std::max((beta_new - beta).cwiseAbs().maxCoeff(),
-                 std::abs(b0_new - b0));
+    const double max_diff_beta = (beta_new - beta).cwiseAbs().maxCoeff();
+    const double max_diff = std::max(max_diff_beta, std::abs(b0_new - b0));
 
     beta = beta_new;
     b0 = b0_new;
 
-    if (diff < tol) {
+    if (std::isfinite(obj_new)) obj_old = obj_new;
+
+    if (max_diff < tol) {
       converged = true;
       ++it;
       break;
@@ -136,37 +235,65 @@ GLMBinomialResult glm_binomial_with_intercept(
 
   // back transform
   Eigen::VectorXd beta_out = beta;
-  for (int j = 0; j < p; ++j)
-    if (standardize[j] != 0)
-      beta_out[j] /= x_scale[j];
+  for (int j = 0; j < p; ++j) {
+    if (standardize[j] != 0) beta_out[j] /= x_scale[j];
+  }
 
   double b0_out = b0;
-  double corr = 0.0;
-  for (int j = 0; j < p; ++j)
-    if (standardize[j] != 0)
-      corr += x_mean[j] * beta_out[j];
-  b0_out -= corr;
+  for (int j = 0; j < p; ++j) {
+    if (standardize[j] != 0) b0_out -= x_mean[j] * beta_out[j];
+  }
 
   return {b0_out, beta_out, converged, it};
 }
 
-GLMBinomialResult glm_binomial_without_intercept(
+GLMBinomialResult glm_binomial_without_intercept_core(
     const Eigen::MatrixXd& X,
     const Eigen::VectorXd& y,
     const Eigen::VectorXd& n_trials,
     const Eigen::VectorXd& offset,
     const Eigen::VectorXd& beta0,
     const Eigen::VectorXi& standardize,
+    const Eigen::VectorXd& lambda_l2_vec,
     int max_iter,
     double tol,
     const std::string& link,
-    double ridge,
     double eps_mu,
     double eps_dmu) {
 
-  const int n = X.rows();
-  const int p = X.cols();
+  const int n = static_cast<int>(X.rows());
+  const int p = static_cast<int>(X.cols());
   const double tiny_sd = 1e-12;
+
+  if (y.size() != n || n_trials.size() != n || offset.size() != n) {
+    throw std::invalid_argument("y/n_trials/offset length must match X.rows()");
+  }
+  if (beta0.size() != p) {
+    throw std::invalid_argument("beta0 length must match X.cols()");
+  }
+  if (standardize.size() != p) {
+    throw std::invalid_argument("standardize length must match X.cols()");
+  }
+  if (lambda_l2_vec.size() != p) {
+    throw std::invalid_argument("lambda_l2_vec length must match X.cols()");
+  }
+  for (int j = 0; j < p; ++j) {
+    if (!(lambda_l2_vec[j] >= 0.0) || !std::isfinite(lambda_l2_vec[j])) {
+      throw std::invalid_argument("lambda_l2_vec must be finite and >= 0");
+    }
+  }
+  if (!(tol > 0.0) || !std::isfinite(tol)) {
+    throw std::invalid_argument("tol must be positive finite");
+  }
+  if (!(eps_mu > 0.0) || !std::isfinite(eps_mu)) {
+    throw std::invalid_argument("eps_mu must be positive finite");
+  }
+  if (!(eps_dmu > 0.0) || !std::isfinite(eps_dmu)) {
+    throw std::invalid_argument("eps_dmu must be positive finite");
+  }
+  if (max_iter <= 0) {
+    return {0.0, beta0, false, 0};
+  }
 
   Eigen::VectorXd x_scale = Eigen::VectorXd::Ones(p);
   Eigen::MatrixXd Xs = X;
@@ -174,28 +301,54 @@ GLMBinomialResult glm_binomial_without_intercept(
   // scale only (no centering)
   for (int j = 0; j < p; ++j) {
     if (standardize[j] != 0) {
-      const double sd =
-          std::sqrt((X.col(j).array().square()).mean());
-      if (sd < tiny_sd)
-        throw std::invalid_argument("constant column");
+      const double sd = std::sqrt((X.col(j).array().square()).mean());
+      if (!std::isfinite(sd) || sd < tiny_sd) {
+        throw std::invalid_argument("Cannot scale (near-)constant column j=" +
+                                    std::to_string(j));
+      }
       x_scale[j] = sd;
       Xs.col(j) /= sd;
     }
   }
 
   Eigen::VectorXd beta = beta0;
-  for (int j = 0; j < p; ++j)
-    if (standardize[j] != 0)
-      beta[j] *= x_scale[j];
+  for (int j = 0; j < p; ++j) {
+    if (standardize[j] != 0) beta[j] *= x_scale[j];
+  }
 
   Eigen::VectorXd eta(n), mu(n), dmu(n), W(n), z(n);
 
+  auto obj_from = [&](const Eigen::VectorXd& beta_try) -> double {
+    eta.noalias() = Xs * beta_try;
+    eta.array() += offset.array();
+
+    LinkEval::eval(link, eta, mu, dmu);
+
+    double llf = 0.0;
+    for (int i = 0; i < n; ++i) {
+      double ni = n_trials[i];
+      if (!(ni >= 0.0) || !std::isfinite(ni)) {
+        throw std::invalid_argument("n_trials must be finite and >= 0");
+      }
+
+      const double mui = clip(mu[i], eps_mu, 1.0 - eps_mu);
+      llf += y[i] * std::log(mui) + (ni - y[i]) * std::log(1.0 - mui);
+    }
+
+    double pen = 0.0;
+    for (int j = 0; j < p; ++j) {
+      pen += 0.5 * lambda_l2_vec[j] * beta_try[j] * beta_try[j];
+    }
+    return llf - pen;
+  };
+
   bool converged = false;
   int it = 0;
+  double obj_old = obj_from(beta);
 
   for (; it < max_iter; ++it) {
-
-    eta = Xs * beta + offset;
+    eta.noalias() = Xs * beta;
+    eta.array() += offset.array();
 
     LinkEval::eval(link, eta, mu, dmu);
 
@@ -205,36 +358,67 @@ GLMBinomialResult glm_binomial_without_intercept(
     }
 
     for (int i = 0; i < n; ++i) {
-      const double ni = std::max(n_trials[i], 0.0);
+      double ni = n_trials[i];
+      if (!(ni > 0.0) || !std::isfinite(ni)) ni = 0.0;
+
       const double denom = mu[i] * (1.0 - mu[i]);
-      W[i] = std::max(ni * dmu[i] * dmu[i] / denom, eps_mu);
+      double wi = (ni > 0.0) ? (ni * dmu[i] * dmu[i] / denom) : eps_mu;
+      if (!(wi > 0.0) || !std::isfinite(wi)) wi = eps_mu;
+      if (wi < eps_mu) wi = eps_mu;
+      W[i] = wi;
     }
 
     z = eta;
     for (int i = 0; i < n; ++i) {
-      if (n_trials[i] > 0.0)
-        z[i] += (y[i] - n_trials[i] * mu[i]) /
-                (n_trials[i] * dmu[i]);
+      double ni = n_trials[i];
+      if (!(ni > 0.0) || !std::isfinite(ni)) ni = 0.0;
+      if (ni > 0.0) {
+        z[i] += (y[i] - ni * mu[i]) / (ni * dmu[i]);
+      }
     }
 
-    Eigen::VectorXd sqrtW = W.array().sqrt();
-    Eigen::MatrixXd Xw = Xs;
-    for (int i = 0; i < n; ++i)
-      Xw.row(i) *= sqrtW[i];
+    const Eigen::VectorXd sqrtW = W.array().sqrt();
 
-    Eigen::VectorXd rhs =
+    Eigen::MatrixXd Xw = Xs;
+    for (int i = 0; i < n; ++i) {
+      Xw.row(i) *= sqrtW[i];
+    }
+
+    const Eigen::VectorXd rhs =
         (sqrtW.array() * (z - offset).array()).matrix();
 
     Eigen::MatrixXd A = Xw.transpose() * Xw;
-    A.diagonal().array() += ridge;
+    A.diagonal().array() += lambda_l2_vec.array();
 
-    Eigen::VectorXd beta_new =
-        A.ldlt().solve(Xw.transpose() * rhs);
+    const Eigen::VectorXd bvec = Xw.transpose() * rhs;
 
-    double diff =
-        (beta_new - beta).cwiseAbs().maxCoeff();
+    Eigen::VectorXd beta_full;
+    Eigen::LDLT<Eigen::MatrixXd> ldlt(A);
+    if (ldlt.info() == Eigen::Success) {
+      beta_full = ldlt.solve(bvec);
+    } else {
+      beta_full = A.colPivHouseholderQr().solve(bvec);
+    }
+
+    double step = 1.0;
+    double obj_new = -INFINITY;
+    Eigen::VectorXd beta_new = beta;
+
+    const int max_halving = 25;
+    for (int hs = 0; hs < max_halving; ++hs) {
+      beta_new = beta + step * (beta_full - beta);
+      obj_new = obj_from(beta_new);
+
+      if (std::isfinite(obj_new) && obj_new >= obj_old - 1e-12) {
+        break;
+      }
+      step *= 0.5;
+    }
+
+    const double diff = (beta_new - beta).cwiseAbs().maxCoeff();
 
     beta = beta_new;
+    if (std::isfinite(obj_new)) obj_old = obj_new;
 
     if (diff < tol) {
       converged = true;
@@ -244,159 +428,9 @@ GLMBinomialResult glm_binomial_without_intercept(
   }
 
   Eigen::VectorXd beta_out = beta;
-  for (int j = 0; j < p; ++j)
-    if (standardize[j] != 0)
-      beta_out[j] /= x_scale[j];
+  for (int j = 0; j < p; ++j) {
+    if (standardize[j] != 0) beta_out[j] /= x_scale[j];
+  }
 
   return {0.0, beta_out, converged, it};
 }
-
-// // glm_binomial (success counts y, aggregated binomial with n_trials)
-// Eigen::VectorXd glm_binomial(
-//     const Eigen::MatrixXd& X,
-//     const Eigen::VectorXd& y,
-//     const Eigen::VectorXd& n_trials,
-//     const Eigen::VectorXd& offset,
-//     const Eigen::VectorXd& beta0,
-//     const Eigen::VectorXi& standardize,
-//     int max_iter,
-//     double tol,
-//     const std::string& link,
-//     double ridge,
-//     double eps_mu,
-//     double eps_dmu) {
-
-//   const int n = static_cast<int>(X.rows());
-//   const int p = static_cast<int>(X.cols());
-//   if (y.size() != n || n_trials.size() != n || offset.size() != n) {
-//     throw std::invalid_argument("y/n_trials/offset length must match X.rows()");
-//   }
-//   if (beta0.size() != p) {
-//     throw std::invalid_argument("beta0 length must match X.cols()");
-//   }
-//   if (standardize.size() != p) {
-//     throw std::invalid_argument("standardize length must match X.cols()");
-//   }
-//   if (max_iter <= 0) return beta0;
-
-//   const double tiny_sd = 1e-12;
-
-//   Eigen::VectorXd x_mean(p);
-//   Eigen::VectorXd x_scale(p);
-//   x_mean.setZero();
-//   x_scale.setOnes();
-
-//   Eigen::MatrixXd Xs = X;
-
-//   for (int j = 0; j < p; ++j) {
-//     if (standardize[j] != 0) {
-//       const double m = X.col(j).mean();
-//       const Eigen::ArrayXd xc = (X.col(j).array() - m);
-//       const double var = (xc * xc).mean();
-//       const double sd = std::sqrt(var);
-
-//       if (!std::isfinite(sd) || sd < tiny_sd) {
-//         throw std::invalid_argument("Cannot standardize (near-)constant column j=" + std::to_string(j));
-//       }
-//       x_mean[j] = m;
-//       x_scale[j] = sd;
-//       Xs.col(j).array() = (Xs.col(j).array() - m) / sd;
-//     }
-//   }
-
-//   int intercept_col = -1;
-//   for (int j = 0; j < p; ++j) {
-//     if (standardize[j] == 0) {
-//       const double mn = X.col(j).minCoeff();
-//       const double mx = X.col(j).maxCoeff();
-//       if (std::abs(mx - mn) < tiny_sd) { intercept_col = j; break; }
-//     }
-//   }
-//   if (intercept_col < 0) {
-//     for (int j = 0; j < p; ++j) {
-//       if (standardize[j] == 0) { intercept_col = j; break; }
-//     }
-//   }
-
-//   Eigen::VectorXd beta_s = beta0;
-//   for (int j = 0; j < p; ++j) {
-//     if (standardize[j] != 0) beta_s[j] = beta0[j] * x_scale[j];
-//   }
-//   if (intercept_col >= 0) {
-//     double shift = 0.0;
-//     for (int j = 0; j < p; ++j) {
-//       if (standardize[j] != 0) shift += x_mean[j] * beta0[j];
-//     }
-//     beta_s[intercept_col] = beta0[intercept_col] + shift;
-//   }
-
-//   Eigen::VectorXd beta = beta_s;
-//   Eigen::VectorXd eta(n), mu(n), dmu(n), W(n), z(n);
-
-//   for (int it = 0; it < max_iter; ++it) {
-//     eta.noalias() = Xs * beta + offset;
-
-//     LinkEval::eval(link, eta, mu, dmu);
-
-//     for (int i = 0; i < n; ++i) {
-//       mu[i]  = clip(mu[i], eps_mu, 1.0 - eps_mu);
-//       dmu[i] = std::max(dmu[i], eps_dmu);
-//     }
-
-//     for (int i = 0; i < n; ++i) {
-//       double ni = n_trials[i];
-//       if (!(ni > 0.0) || !std::isfinite(ni)) ni = 0.0;
-
-//       const double denom = mu[i] * (1.0 - mu[i]);
-//       W[i] = (ni > 0.0) ? (ni * (dmu[i] * dmu[i]) / denom) : eps_mu;
-
-//       if (!(W[i] > 0.0) || !std::isfinite(W[i])) W[i] = eps_mu;
-//       if (W[i] < eps_mu) W[i] = eps_mu;
-//     }
-
-//     z = eta;
-//     for (int i = 0; i < n; ++i) {
-//       double ni = n_trials[i];
-//       if (!(ni > 0.0) || !std::isfinite(ni)) ni = 0.0;
-//       if (ni > 0.0) {
-//         z[i] += (y[i] - ni * mu[i]) / (ni * dmu[i]);
-//       }
-//     }
-
-//     const Eigen::VectorXd sqrtW = W.array().sqrt();
-//     Eigen::MatrixXd Xw = Xs;
-//     for (int i = 0; i < n; ++i) Xw.row(i) *= sqrtW[i];
-//     const Eigen::VectorXd rhs = (sqrtW.array() * (z - offset).array()).matrix();
-
-//     Eigen::MatrixXd A = Xw.transpose() * Xw;
-//     A.diagonal().array() += ridge;
-//     const Eigen::VectorXd b = Xw.transpose() * rhs;
-
-//     Eigen::VectorXd beta_new;
-//     Eigen::LDLT<Eigen::MatrixXd> ldlt(A);
-//     if (ldlt.info() == Eigen::Success) beta_new = ldlt.solve(b);
-//     else beta_new = A.colPivHouseholderQr().solve(b);
-
-//     double max_abs = 0.0;
-//     for (int j = 0; j < p; ++j) {
-//       const double d = std::abs(beta_new[j] - beta[j]);
-//       if (d > max_abs) max_abs = d;
-//     }
-//     beta = beta_new;
-//     if (max_abs < tol) break;
-//   }
-
-//   Eigen::VectorXd beta_out = beta;
-//   for (int j = 0; j < p; ++j) {
-//     if (standardize[j] != 0) beta_out[j] = beta[j] / x_scale[j];
-//   }
-//   if (intercept_col >= 0) {
-//     double shift = 0.0;
-//     for (int j = 0; j < p; ++j) {
-//       if (standardize[j] != 0) shift += x_mean[j] * beta_out[j];
-//     }
-//     beta_out[intercept_col] = beta[intercept_col] - shift;
-//   }
-
-//   return beta_out;
-// }

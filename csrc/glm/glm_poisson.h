@@ -17,11 +17,13 @@ struct GLMPoissonResult {
 };
 
 // -----------------------------------------------------------------------------
-// Core APIs: per-coordinate L2 penalties in standardized space
+// Core APIs: correlated L2 penalty in standardized space
 // -----------------------------------------------------------------------------
 //
 // Penalty in standardized space:
-//   0.5 * sum_j lambda_l2_vec[j] * beta_j^2
+//   0.5 * beta^T lambda_l2_mat * beta
+//
+// where lambda_l2_mat is p x p, symmetric, positive semidefinite.
 //
 // These are the actual implementations in .cpp.
 
@@ -32,7 +34,7 @@ GLMPoissonResult glm_poisson_with_intercept_core(
     double intercept0,
     const Eigen::VectorXd& beta0,
     const Eigen::VectorXi& standardize,
-    const Eigen::VectorXd& lambda_l2_vec,  // length p, >= 0
+    const Eigen::MatrixXd& lambda_l2_mat,  // p x p, symmetric PSD
     int max_iter = 25,
     double tol = 1e-8,
     double eps_mu = 1e-15);
@@ -43,10 +45,82 @@ GLMPoissonResult glm_poisson_without_intercept_core(
     const Eigen::VectorXd& offset,
     const Eigen::VectorXd& beta0,
     const Eigen::VectorXi& standardize,
-    const Eigen::VectorXd& lambda_l2_vec,  // length p, >= 0
+    const Eigen::MatrixXd& lambda_l2_mat,  // p x p, symmetric PSD
     int max_iter = 25,
     double tol = 1e-8,
     double eps_mu = 1e-15);
+
+// -----------------------------------------------------------------------------
+// Helper: build diagonal penalty matrix from per-coordinate L2 vector
+// -----------------------------------------------------------------------------
+
+inline Eigen::MatrixXd glm_poisson_make_diagonal_l2_penalty(
+    const Eigen::VectorXd& lambda_l2_vec,
+    int p) {
+  if (lambda_l2_vec.size() != p) {
+    throw std::invalid_argument("lambda_l2_vec length must match X.cols()");
+  }
+  if (!lambda_l2_vec.allFinite()) {
+    throw std::invalid_argument("lambda_l2_vec must be finite");
+  }
+  for (int j = 0; j < p; ++j) {
+    if (lambda_l2_vec[j] < 0.0) {
+      throw std::invalid_argument("lambda_l2_vec must be >= 0");
+    }
+  }
+  return lambda_l2_vec.asDiagonal();
+}
+
+// -----------------------------------------------------------------------------
+// Wrapper: per-coordinate L2 penalties in standardized space
+// -----------------------------------------------------------------------------
+//
+// Penalty in standardized space:
+//   0.5 * sum_j lambda_l2_vec[j] * beta_j^2
+//
+// This preserves the old vector-penalty interface while routing to the
+// matrix-penalty core.
+
+inline GLMPoissonResult glm_poisson_with_intercept_diag(
+    const Eigen::MatrixXd& X,
+    const Eigen::VectorXd& y,
+    const Eigen::VectorXd& offset,
+    double intercept0,
+    const Eigen::VectorXd& beta0,
+    const Eigen::VectorXi& standardize,
+    const Eigen::VectorXd& lambda_l2_vec,  // length p, >= 0
+    int max_iter = 25,
+    double tol = 1e-8,
+    double eps_mu = 1e-15) {
+
+  const int p = static_cast<int>(X.cols());
+  const Eigen::MatrixXd lambda_l2_mat =
+      glm_poisson_make_diagonal_l2_penalty(lambda_l2_vec, p);
+
+  return glm_poisson_with_intercept_core(
+      X, y, offset, intercept0, beta0, standardize,
+      lambda_l2_mat, max_iter, tol, eps_mu);
+}
+
+inline GLMPoissonResult glm_poisson_without_intercept_diag(
+    const Eigen::MatrixXd& X,
+    const Eigen::VectorXd& y,
+    const Eigen::VectorXd& offset,
+    const Eigen::VectorXd& beta0,
+    const Eigen::VectorXi& standardize,
+    const Eigen::VectorXd& lambda_l2_vec,  // length p, >= 0
+    int max_iter = 25,
+    double tol = 1e-8,
+    double eps_mu = 1e-15) {
+
+  const int p = static_cast<int>(X.cols());
+  const Eigen::MatrixXd lambda_l2_mat =
+      glm_poisson_make_diagonal_l2_penalty(lambda_l2_vec, p);
+
+  return glm_poisson_without_intercept_core(
+      X, y, offset, beta0, standardize,
+      lambda_l2_mat, max_iter, tol, eps_mu);
+}
 
 // -----------------------------------------------------------------------------
 // Backward-compatible wrappers: scalar ridge only
@@ -74,11 +148,12 @@ inline GLMPoissonResult glm_poisson_with_intercept(
     throw std::invalid_argument("ridge must be finite and >= 0");
   }
 
-  const Eigen::VectorXd lambda_l2_vec = Eigen::VectorXd::Constant(p, ridge);
+  const Eigen::MatrixXd lambda_l2_mat =
+      ridge * Eigen::MatrixXd::Identity(p, p);
 
   return glm_poisson_with_intercept_core(
       X, y, offset, intercept0, beta0, standardize,
-      lambda_l2_vec, max_iter, tol, eps_mu);
+      lambda_l2_mat, max_iter, tol, eps_mu);
 }
 
 inline GLMPoissonResult glm_poisson_without_intercept(
@@ -98,11 +173,53 @@ inline GLMPoissonResult glm_poisson_without_intercept(
     throw std::invalid_argument("ridge must be finite and >= 0");
   }
 
-  const Eigen::VectorXd lambda_l2_vec = Eigen::VectorXd::Constant(p, ridge);
+  const Eigen::MatrixXd lambda_l2_mat =
+      ridge * Eigen::MatrixXd::Identity(p, p);
 
   return glm_poisson_without_intercept_core(
       X, y, offset, beta0, standardize,
-      lambda_l2_vec, max_iter, tol, eps_mu);
+      lambda_l2_mat, max_iter, tol, eps_mu);
+}
+
+// -----------------------------------------------------------------------------
+// Wrappers: full correlated L2 penalty matrix
+// -----------------------------------------------------------------------------
+//
+// These expose the full p x p penalty matrix directly.
+// Penalty:
+//   0.5 * beta^T lambda_l2_mat * beta
+
+inline GLMPoissonResult glm_poisson_with_intercept_correlated(
+    const Eigen::MatrixXd& X,
+    const Eigen::VectorXd& y,
+    const Eigen::VectorXd& offset,
+    double intercept0,
+    const Eigen::VectorXd& beta0,
+    const Eigen::VectorXi& standardize,
+    const Eigen::MatrixXd& lambda_l2_mat,
+    int max_iter = 25,
+    double tol = 1e-8,
+    double eps_mu = 1e-15) {
+
+  return glm_poisson_with_intercept_core(
+      X, y, offset, intercept0, beta0, standardize,
+      lambda_l2_mat, max_iter, tol, eps_mu);
+}
+
+inline GLMPoissonResult glm_poisson_without_intercept_correlated(
+    const Eigen::MatrixXd& X,
+    const Eigen::VectorXd& y,
+    const Eigen::VectorXd& offset,
+    const Eigen::VectorXd& beta0,
+    const Eigen::VectorXi& standardize,
+    const Eigen::MatrixXd& lambda_l2_mat,
+    int max_iter = 25,
+    double tol = 1e-8,
+    double eps_mu = 1e-15) {
+
+  return glm_poisson_without_intercept_core(
+      X, y, offset, beta0, standardize,
+      lambda_l2_mat, max_iter, tol, eps_mu);
 }
 
 // -----------------------------------------------------------------------------
@@ -152,9 +269,12 @@ inline GLMPoissonENetResult glm_poisson_with_intercept_from_elasticnet_alpha0(
     lambda_l2_vec[j] = (penalty_mask[j] != 0) ? l2 : 0.0;
   }
 
+  const Eigen::MatrixXd lambda_l2_mat =
+      glm_poisson_make_diagonal_l2_penalty(lambda_l2_vec, p);
+
   const GLMPoissonResult r = glm_poisson_with_intercept_core(
       X, y, offset, intercept0, beta0, standardize,
-      lambda_l2_vec, max_iter, tol, eps_mu);
+      lambda_l2_mat, max_iter, tol, eps_mu);
 
   GLMPoissonENetResult out;
   out.intercept = r.intercept;
@@ -199,9 +319,12 @@ inline GLMPoissonENetResult glm_poisson_without_intercept_from_elasticnet_alpha0
     lambda_l2_vec[j] = (penalty_mask[j] != 0) ? l2 : 0.0;
   }
 
+  const Eigen::MatrixXd lambda_l2_mat =
+      glm_poisson_make_diagonal_l2_penalty(lambda_l2_vec, p);
+
   const GLMPoissonResult r = glm_poisson_without_intercept_core(
       X, y, offset, beta0, standardize,
-      lambda_l2_vec, max_iter, tol, eps_mu);
+      lambda_l2_mat, max_iter, tol, eps_mu);
 
   GLMPoissonENetResult out;
   out.intercept = r.intercept;
