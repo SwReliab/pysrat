@@ -1,3 +1,9 @@
+# pysrat 0.2.5
+
+- refactor Poisson regression wrappers (`glm_poisson` and `glmnet_poisson`) and corresponding C++/pybind integration
+- update `fit_pr_nhpp` to use penalty factorization (`penalty`) in regression forwarding
+- add `l2matrix` support to `fit_pr_nhpp` and pass it through to Poisson GLM/GLMNET backends
+
 # pysrat 0.2.4
 
 - fix tests to use current `NHPPData.from_intervals` keyword arguments (`intervals`, `counts`, `on_boundary`) instead of removed legacy names (`time`, `fault`, `type`)
