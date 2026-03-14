@@ -10,7 +10,7 @@ from ...regression.glm_poisson import glm_poisson
 
 # If you have these already, import them. (Otherwise remove elasticnet branch or add stubs.)
 try:
-    from ...regression.glm_poisson_elasticnet import glm_poisson_elasticnet  # type: ignore
+    from ...regression.glmnet_poisson import glmnet_poisson as glm_poisson_elasticnet  # type: ignore
 except Exception:  # pragma: no cover
     glm_poisson_elasticnet = None  # type: ignore
 
@@ -95,6 +95,39 @@ def _as_mask_01(mask: Optional[np.ndarray], p: int, *, name: str) -> np.ndarray:
     return m
 
 
+def _as_penalty_factor(
+    penalty: Optional[np.ndarray],
+    p: int,
+) -> Optional[np.ndarray]:
+    """
+    Normalize optional penalty factor.
+    """
+    if penalty is not None:
+        pf = np.asarray(penalty, dtype=float).reshape(-1)
+        if pf.shape != (p,):
+            raise ValueError(f"penalty must have shape ({p},), got {pf.shape}")
+        if np.any(~np.isfinite(pf)) or np.any(pf < 0.0):
+            raise ValueError("penalty must be finite and >= 0")
+        return pf
+
+    return None
+
+
+def _as_l2_matrix(l2matrix: Optional[np.ndarray], p: int) -> Optional[np.ndarray]:
+    """
+    Validate optional L2 correlation matrix.
+    """
+    if l2matrix is None:
+        return None
+
+    mat = np.asarray(l2matrix, dtype=float)
+    if mat.shape != (p, p):
+        raise ValueError(f"l2matrix must have shape ({p}, {p}), got {mat.shape}")
+    if np.any(~np.isfinite(mat)):
+        raise ValueError("l2matrix must be finite")
+    return mat
+
+
 def fit_pr_nhpp(
     models: Union[Mapping[str, Any], Sequence[Any]],
     sdata: SMetricsData,
@@ -112,12 +145,12 @@ def fit_pr_nhpp(
     # regression (shared)
     max_glm_iter: int = 25,
     glm_tol: float = 1e-8,
-    ridge: float = 1e-12,
     eps_mu: float = 1e-15,
     # elasticnet specific
     alpha: float = 0.5,
     lambd: float = 0.0,
-    penalty: Optional[np.ndarray] = None,     # (q,) 1=penalize, 0=free (beta only)
+    penalty: Optional[np.ndarray] = None,  # (q,) nonnegative weight per beta
+    l2matrix: Optional[np.ndarray] = None,  # (q,q) correlated L2 structure
     standardize: Optional[np.ndarray] = None,      # (q,) override sdata.standardize if not None
     # inner EM kwargs forwarded to each model.em_step(...)
     inner_kwargs: Optional[Dict[str, Any]] = None,
@@ -199,7 +232,8 @@ def fit_pr_nhpp(
     std_mask = standardize if standardize is not None else s_aligned.standardize
     std_mask01 = _as_mask_01(std_mask, q, name="standardize") if std_mask is not None else None
 
-    pen_mask01 = _as_mask_01(penalty, q, name="penalty")
+    pen_factor = _as_penalty_factor(penalty, p=q)
+    l2_mat = _as_l2_matrix(l2matrix, q)
 
     if reg == "elasticnet" and glm_poisson_elasticnet is None:
         raise RuntimeError(
@@ -289,14 +323,14 @@ def fit_pr_nhpp(
                 max_iter=int(max_glm_iter),
                 tol=float(glm_tol),
                 standardize=std_mask01,
-                ridge=float(ridge),
+                lambda_=float(lambd),
+                penalty_factor=pen_factor,
+                lambda_l2_mat=l2_mat,
                 eps_mu=float(eps_mu),
             )
             reg_info = {}
         else:
             # elasticnet
-            # Expect glm_poisson_elasticnet signature similar to binomial one:
-            #   (..., alpha=..., lambd=..., ridge=..., eps_mu=..., standardize=..., penalty=...)
             reg_res = glm_poisson_elasticnet(  # type: ignore[misc]
                 X=X,
                 y=total,
@@ -308,9 +342,9 @@ def fit_pr_nhpp(
                 tol=float(glm_tol),
                 standardize=std_mask01,
                 alpha=float(alpha),
-                lambd=float(lambd),
-                penalty=pen_mask01,
-                ridge=float(ridge),
+                lambda_=float(lambd),
+                penalty_factor=pen_factor,
+                lambda_l2_mat=l2_mat,
                 eps_mu=float(eps_mu),
             )
             # allow extra diagnostics

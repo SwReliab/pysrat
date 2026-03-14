@@ -6,6 +6,7 @@ import numpy as np
 
 from .. import _glm as _cglm
 
+
 class GLMPoissonFit(TypedDict):
     intercept: float
     beta: np.ndarray
@@ -24,7 +25,9 @@ def glm_poisson(
     max_iter: int = 25,
     tol: float = 1e-8,
     standardize: Optional[np.ndarray] = None,
-    ridge: float = 1e-12,
+    lambda_: float = 1.0,
+    penalty_factor: Optional[np.ndarray] = None,
+    lambda_l2_mat: Optional[np.ndarray] = None,
     eps_mu: float = 1e-15,
 ) -> GLMPoissonFit:
     """Poisson GLM (log link) via C++ IRLS.
@@ -33,14 +36,37 @@ def glm_poisson(
         eta = intercept + X @ beta + offset
         mu  = exp(eta)
 
-    Notes
-    -----
-    - `offset` is typically log-exposure. If None, uses zeros.
-    - If `fit_intercept` is True, the intercept is estimated (separately from X).
-      X must NOT contain an all-ones intercept column.
-    - `standardize` is a 0/1 mask of length p. If None, defaults to all-ones.
-      * with_intercept: 1 -> center+scale
-      * without_intercept: 1 -> scale only (no centering)
+    Parameters
+    ----------
+    X : ndarray, shape (n, p)
+    y : ndarray, shape (n,)
+    offset : ndarray, shape (n,), optional
+        Typically log-exposure. If None, uses zeros.
+    intercept0 : float
+        Initial intercept value. Ignored when fit_intercept=False.
+    beta0 : ndarray, shape (p,), optional
+        Initial coefficient vector. If None, uses zeros.
+    fit_intercept : bool
+        If True, estimate intercept separately from X.
+    max_iter : int
+    tol : float
+    standardize : ndarray, shape (p,), optional
+        0/1 mask. If None, defaults to all-ones in the C++ layer.
+        - fit_intercept=True  -> 1 means center+scale
+        - fit_intercept=False -> 1 means scale only
+    lambda_ : float
+        Overall L2 penalty scale.
+    penalty_factor : ndarray, shape (p,), optional
+        Per-coefficient penalty weights. If None, uses ones.
+    lambda_l2_mat : ndarray, shape (p, p), optional
+        If None, uses identity-L2 penalty.
+        If provided, uses correlated L2 penalty matrix.
+    eps_mu : float
+
+    Returns
+    -------
+    dict with keys:
+        intercept, beta, converged, n_iter
     """
     X = np.asarray(X, dtype=np.float64)
     y = np.asarray(y, dtype=np.float64)
@@ -67,20 +93,47 @@ def glm_poisson(
             raise ValueError("beta0 length must match X.cols()")
 
     std_arg = None if standardize is None else np.asarray(standardize, dtype=np.int32)
+    if std_arg is not None and std_arg.shape != (p,):
+        raise ValueError("standardize length must match X.cols()")
 
-    if fit_intercept:
-        res = _cglm.glm_poisson_with_intercept(
-            X, y, offset,
-            float(intercept0), beta0, std_arg,
-            int(max_iter), float(tol),
-            float(ridge), float(eps_mu),
+    pf_arg = None if penalty_factor is None else np.asarray(penalty_factor, dtype=np.float64)
+    if pf_arg is not None and pf_arg.shape != (p,):
+        raise ValueError("penalty_factor length must match X.cols()")
+
+    if lambda_l2_mat is None:
+        res = _cglm.glm_poisson_identity(
+            X,
+            y,
+            offset,
+            bool(fit_intercept),
+            float(intercept0),
+            beta0,
+            std_arg,
+            float(lambda_),
+            pf_arg,
+            int(max_iter),
+            float(tol),
+            float(eps_mu),
         )
     else:
-        res = _cglm.glm_poisson_without_intercept(
-            X, y, offset,
-            beta0, std_arg,
-            int(max_iter), float(tol),
-            float(ridge), float(eps_mu),
+        lambda_l2_mat = np.asarray(lambda_l2_mat, dtype=np.float64)
+        if lambda_l2_mat.shape != (p, p):
+            raise ValueError("lambda_l2_mat must have shape (p, p)")
+
+        res = _cglm.glm_poisson_correlated(
+            X,
+            y,
+            offset,
+            bool(fit_intercept),
+            float(intercept0),
+            beta0,
+            std_arg,
+            lambda_l2_mat,
+            float(lambda_),
+            pf_arg,
+            int(max_iter),
+            float(tol),
+            float(eps_mu),
         )
 
     return {

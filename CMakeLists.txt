@@ -54,11 +54,16 @@ target_include_directories(marlib_cf1 PRIVATE
 )
 
 pybind11_add_module(_glm
-  csrc/glm/pybindings.cpp
+  csrc/glm/pybindings_module.cpp
+  csrc/glm/bind_binomial.cpp
+  csrc/glm/bind_binomial_elasticnet.cpp
   csrc/glm/glm_binomial.cpp
-  csrc/glm/glm_poisson.cpp
   csrc/glm/glm_binomial_elasticnet_with_intercept.cpp
   csrc/glm/glm_binomial_elasticnet_without_intercept.cpp
+  csrc/glm/bind_glm_poisson.cpp
+  csrc/glm/bind_glmnet_poisson.cpp
+  csrc/glm/glm_poisson_with_intercept.cpp
+  csrc/glm/glm_poisson_without_intercept.cpp
   csrc/glm/glm_poisson_elasticnet_with_intercept.cpp
   csrc/glm/glm_poisson_elasticnet_without_intercept.cpp
 )

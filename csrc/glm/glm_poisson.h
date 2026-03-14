@@ -6,26 +6,56 @@
 #include <stdexcept>
 #include <string>
 
-#include "glm_poisson_elasticnet.h"
+// -----------------------------------------------------------------------------
+// Result containers
+// -----------------------------------------------------------------------------
 
-// Result container for Poisson GLM fits
 struct GLMPoissonResult {
-  double intercept;        // 0.0 for *_without_intercept
+  double intercept;        // 0.0 for without-intercept fits
   Eigen::VectorXd beta;    // length p
   bool converged;
   int n_iter;
 };
 
+struct GLMPoissonENetResult {
+  double intercept = 0.0;       // unstandardized intercept (0.0 for without-intercept)
+  Eigen::VectorXd beta;         // unstandardized beta (length p)
+
+  bool converged = false;
+  int n_outer = 0;              // executed IRLS iterations
+  int n_inner = 0;              // total executed CD sweeps
+  double max_delta = 0.0;       // last outer max change
+  double max_delta_inner = 0.0; // last inner sweep max change
+};
+
 // -----------------------------------------------------------------------------
-// Core APIs: correlated L2 penalty in standardized space
+// Internal core declarations
 // -----------------------------------------------------------------------------
 //
-// Penalty in standardized space:
-//   0.5 * beta^T lambda_l2_mat * beta
+// glm cores:
+//   L2 only
 //
-// where lambda_l2_mat is p x p, symmetric, positive semidefinite.
+// elasticnet cores:
+//   L1 + L2
 //
-// These are the actual implementations in .cpp.
+// Overloads exist for:
+//   - vector L2
+//   - matrix L2
+//
+// All penalties are interpreted in standardized space.
+
+// ----- glm core: with intercept -----
+GLMPoissonResult glm_poisson_with_intercept_core(
+    const Eigen::MatrixXd& X,
+    const Eigen::VectorXd& y,
+    const Eigen::VectorXd& offset,
+    double intercept0,
+    const Eigen::VectorXd& beta0,
+    const Eigen::VectorXi& standardize,
+    const Eigen::VectorXd& lambda_l2_vec,
+    int max_iter = 25,
+    double tol = 1e-8,
+    double eps_mu = 1e-15);
 
 GLMPoissonResult glm_poisson_with_intercept_core(
     const Eigen::MatrixXd& X,
@@ -34,7 +64,19 @@ GLMPoissonResult glm_poisson_with_intercept_core(
     double intercept0,
     const Eigen::VectorXd& beta0,
     const Eigen::VectorXi& standardize,
-    const Eigen::MatrixXd& lambda_l2_mat,  // p x p, symmetric PSD
+    const Eigen::MatrixXd& lambda_l2_mat,
+    int max_iter = 25,
+    double tol = 1e-8,
+    double eps_mu = 1e-15);
+
+// ----- glm core: without intercept -----
+GLMPoissonResult glm_poisson_without_intercept_core(
+    const Eigen::MatrixXd& X,
+    const Eigen::VectorXd& y,
+    const Eigen::VectorXd& offset,
+    const Eigen::VectorXd& beta0,
+    const Eigen::VectorXi& standardize,
+    const Eigen::VectorXd& lambda_l2_vec,
     int max_iter = 25,
     double tol = 1e-8,
     double eps_mu = 1e-15);
@@ -45,237 +87,100 @@ GLMPoissonResult glm_poisson_without_intercept_core(
     const Eigen::VectorXd& offset,
     const Eigen::VectorXd& beta0,
     const Eigen::VectorXi& standardize,
-    const Eigen::MatrixXd& lambda_l2_mat,  // p x p, symmetric PSD
+    const Eigen::MatrixXd& lambda_l2_mat,
+    int max_iter = 25,
+    double tol = 1e-8,
+    double eps_mu = 1e-15);
+
+// ----- elasticnet core: with intercept -----
+GLMPoissonENetResult glm_poisson_elasticnet_with_intercept_core(
+    const Eigen::MatrixXd& X,
+    const Eigen::VectorXd& y,
+    const Eigen::VectorXd& offset,
+    double intercept0,
+    const Eigen::VectorXd& beta0,
+    const Eigen::VectorXi& standardize,
+    const Eigen::VectorXd& lambda_l1_vec,
+    const Eigen::VectorXd& lambda_l2_vec,
+    int max_iter = 25,
+    double tol = 1e-8,
+    double eps_mu = 1e-15);
+
+GLMPoissonENetResult glm_poisson_elasticnet_with_intercept_core(
+    const Eigen::MatrixXd& X,
+    const Eigen::VectorXd& y,
+    const Eigen::VectorXd& offset,
+    double intercept0,
+    const Eigen::VectorXd& beta0,
+    const Eigen::VectorXi& standardize,
+    const Eigen::VectorXd& lambda_l1_vec,
+    const Eigen::MatrixXd& lambda_l2_mat,
+    int max_iter = 25,
+    double tol = 1e-8,
+    double eps_mu = 1e-15);
+
+// ----- elasticnet core: without intercept -----
+GLMPoissonENetResult glm_poisson_elasticnet_without_intercept_core(
+    const Eigen::MatrixXd& X,
+    const Eigen::VectorXd& y,
+    const Eigen::VectorXd& offset,
+    const Eigen::VectorXd& beta0,
+    const Eigen::VectorXi& standardize,
+    const Eigen::VectorXd& lambda_l1_vec,
+    const Eigen::VectorXd& lambda_l2_vec,
+    int max_iter = 25,
+    double tol = 1e-8,
+    double eps_mu = 1e-15);
+
+GLMPoissonENetResult glm_poisson_elasticnet_without_intercept_core(
+    const Eigen::MatrixXd& X,
+    const Eigen::VectorXd& y,
+    const Eigen::VectorXd& offset,
+    const Eigen::VectorXd& beta0,
+    const Eigen::VectorXi& standardize,
+    const Eigen::VectorXd& lambda_l1_vec,
+    const Eigen::MatrixXd& lambda_l2_mat,
     int max_iter = 25,
     double tol = 1e-8,
     double eps_mu = 1e-15);
 
 // -----------------------------------------------------------------------------
-// Helper: build diagonal penalty matrix from per-coordinate L2 vector
+// Helpers
 // -----------------------------------------------------------------------------
 
-inline Eigen::MatrixXd glm_poisson_make_diagonal_l2_penalty(
-    const Eigen::VectorXd& lambda_l2_vec,
+inline void glm_poisson_validate_penalty_factor(
+    const Eigen::VectorXd& penalty_factor,
     int p) {
-  if (lambda_l2_vec.size() != p) {
-    throw std::invalid_argument("lambda_l2_vec length must match X.cols()");
+  if (penalty_factor.size() != p) {
+    throw std::invalid_argument("penalty_factor length must match X.cols()");
   }
-  if (!lambda_l2_vec.allFinite()) {
-    throw std::invalid_argument("lambda_l2_vec must be finite");
+  if (!penalty_factor.allFinite()) {
+    throw std::invalid_argument("penalty_factor must be finite");
   }
   for (int j = 0; j < p; ++j) {
-    if (lambda_l2_vec[j] < 0.0) {
-      throw std::invalid_argument("lambda_l2_vec must be >= 0");
+    if (penalty_factor[j] < 0.0) {
+      throw std::invalid_argument("penalty_factor must be >= 0");
     }
   }
-  return lambda_l2_vec.asDiagonal();
 }
 
-// -----------------------------------------------------------------------------
-// Wrapper: per-coordinate L2 penalties in standardized space
-// -----------------------------------------------------------------------------
-//
-// Penalty in standardized space:
-//   0.5 * sum_j lambda_l2_vec[j] * beta_j^2
-//
-// This preserves the old vector-penalty interface while routing to the
-// matrix-penalty core.
-
-inline GLMPoissonResult glm_poisson_with_intercept_diag(
-    const Eigen::MatrixXd& X,
-    const Eigen::VectorXd& y,
-    const Eigen::VectorXd& offset,
-    double intercept0,
-    const Eigen::VectorXd& beta0,
-    const Eigen::VectorXi& standardize,
-    const Eigen::VectorXd& lambda_l2_vec,  // length p, >= 0
-    int max_iter = 25,
-    double tol = 1e-8,
-    double eps_mu = 1e-15) {
-
-  const int p = static_cast<int>(X.cols());
-  const Eigen::MatrixXd lambda_l2_mat =
-      glm_poisson_make_diagonal_l2_penalty(lambda_l2_vec, p);
-
-  return glm_poisson_with_intercept_core(
-      X, y, offset, intercept0, beta0, standardize,
-      lambda_l2_mat, max_iter, tol, eps_mu);
-}
-
-inline GLMPoissonResult glm_poisson_without_intercept_diag(
-    const Eigen::MatrixXd& X,
-    const Eigen::VectorXd& y,
-    const Eigen::VectorXd& offset,
-    const Eigen::VectorXd& beta0,
-    const Eigen::VectorXi& standardize,
-    const Eigen::VectorXd& lambda_l2_vec,  // length p, >= 0
-    int max_iter = 25,
-    double tol = 1e-8,
-    double eps_mu = 1e-15) {
-
-  const int p = static_cast<int>(X.cols());
-  const Eigen::MatrixXd lambda_l2_mat =
-      glm_poisson_make_diagonal_l2_penalty(lambda_l2_vec, p);
-
-  return glm_poisson_without_intercept_core(
-      X, y, offset, beta0, standardize,
-      lambda_l2_mat, max_iter, tol, eps_mu);
-}
-
-// -----------------------------------------------------------------------------
-// Backward-compatible wrappers: scalar ridge only
-// -----------------------------------------------------------------------------
-//
-// Existing API compatibility:
-// - ridge is applied equally to all coefficients in standardized space
-// - no L1 term
-
-inline GLMPoissonResult glm_poisson_with_intercept(
-    const Eigen::MatrixXd& X,
-    const Eigen::VectorXd& y,
-    const Eigen::VectorXd& offset,
-    double intercept0,
-    const Eigen::VectorXd& beta0,
-    const Eigen::VectorXi& standardize,
-    int max_iter = 25,
-    double tol = 1e-8,
-    double ridge = 1e-12,
-    double eps_mu = 1e-15) {
-
-  const int p = static_cast<int>(X.cols());
-
-  if (!(ridge >= 0.0) || !std::isfinite(ridge)) {
-    throw std::invalid_argument("ridge must be finite and >= 0");
-  }
-
-  const Eigen::MatrixXd lambda_l2_mat =
-      ridge * Eigen::MatrixXd::Identity(p, p);
-
-  return glm_poisson_with_intercept_core(
-      X, y, offset, intercept0, beta0, standardize,
-      lambda_l2_mat, max_iter, tol, eps_mu);
-}
-
-inline GLMPoissonResult glm_poisson_without_intercept(
-    const Eigen::MatrixXd& X,
-    const Eigen::VectorXd& y,
-    const Eigen::VectorXd& offset,
-    const Eigen::VectorXd& beta0,
-    const Eigen::VectorXi& standardize,
-    int max_iter = 25,
-    double tol = 1e-8,
-    double ridge = 1e-12,
-    double eps_mu = 1e-15) {
-
-  const int p = static_cast<int>(X.cols());
-
-  if (!(ridge >= 0.0) || !std::isfinite(ridge)) {
-    throw std::invalid_argument("ridge must be finite and >= 0");
-  }
-
-  const Eigen::MatrixXd lambda_l2_mat =
-      ridge * Eigen::MatrixXd::Identity(p, p);
-
-  return glm_poisson_without_intercept_core(
-      X, y, offset, beta0, standardize,
-      lambda_l2_mat, max_iter, tol, eps_mu);
-}
-
-// -----------------------------------------------------------------------------
-// Wrappers: full correlated L2 penalty matrix
-// -----------------------------------------------------------------------------
-//
-// These expose the full p x p penalty matrix directly.
-// Penalty:
-//   0.5 * beta^T lambda_l2_mat * beta
-
-inline GLMPoissonResult glm_poisson_with_intercept_correlated(
-    const Eigen::MatrixXd& X,
-    const Eigen::VectorXd& y,
-    const Eigen::VectorXd& offset,
-    double intercept0,
-    const Eigen::VectorXd& beta0,
-    const Eigen::VectorXi& standardize,
+inline void glm_poisson_validate_lambda_l2_mat(
     const Eigen::MatrixXd& lambda_l2_mat,
-    int max_iter = 25,
-    double tol = 1e-8,
-    double eps_mu = 1e-15) {
-
-  return glm_poisson_with_intercept_core(
-      X, y, offset, intercept0, beta0, standardize,
-      lambda_l2_mat, max_iter, tol, eps_mu);
+    int p) {
+  if (lambda_l2_mat.rows() != p || lambda_l2_mat.cols() != p) {
+    throw std::invalid_argument("lambda_l2_mat must be p x p");
+  }
+  if (!lambda_l2_mat.allFinite()) {
+    throw std::invalid_argument("lambda_l2_mat must be finite");
+  }
 }
 
-inline GLMPoissonResult glm_poisson_without_intercept_correlated(
-    const Eigen::MatrixXd& X,
-    const Eigen::VectorXd& y,
-    const Eigen::VectorXd& offset,
-    const Eigen::VectorXd& beta0,
-    const Eigen::VectorXi& standardize,
-    const Eigen::MatrixXd& lambda_l2_mat,
-    int max_iter = 25,
-    double tol = 1e-8,
-    double eps_mu = 1e-15) {
-
-  return glm_poisson_without_intercept_core(
-      X, y, offset, beta0, standardize,
-      lambda_l2_mat, max_iter, tol, eps_mu);
+inline Eigen::VectorXd glm_poisson_default_penalty_factor(int p) {
+  return Eigen::VectorXd::Ones(p);
 }
 
-// -----------------------------------------------------------------------------
-// Wrappers for ElasticNet(alpha = 0) routing
-// -----------------------------------------------------------------------------
-//
-// Old elasticnet API at alpha = 0:
-//   L1 = 0
-//   L2 = lambd + ridge
-//
-// If penalty_mask[j] == 0, the coefficient is fully unpenalized,
-// including the stabilization ridge (to match the old elasticnet behavior).
-//
-// These wrappers return GLMPoissonENetResult directly so callers (including
-// pybind) do not need to manually convert GLMPoissonResult -> GLMPoissonENetResult.
-
-inline GLMPoissonENetResult glm_poisson_with_intercept_from_elasticnet_alpha0(
-    const Eigen::MatrixXd& X,
-    const Eigen::VectorXd& y,
-    const Eigen::VectorXd& offset,
-    double intercept0,
-    const Eigen::VectorXd& beta0,
-    const Eigen::VectorXi& standardize,
-    const Eigen::VectorXi& penalty_mask,   // 0/1 length p
-    int max_iter = 25,
-    double tol = 1e-8,
-    double lambd = 1e-2,
-    double ridge = 1e-12,
-    double eps_mu = 1e-15) {
-
-  const int p = static_cast<int>(X.cols());
-
-  if (penalty_mask.size() != p) {
-    throw std::invalid_argument("penalty_mask length must match X.cols()");
-  }
-  if (!(lambd >= 0.0) || !std::isfinite(lambd)) {
-    throw std::invalid_argument("lambd must be finite and >= 0");
-  }
-  if (!(ridge >= 0.0) || !std::isfinite(ridge)) {
-    throw std::invalid_argument("ridge must be finite and >= 0");
-  }
-
-  const double l2 = lambd + ridge;
-
-  Eigen::VectorXd lambda_l2_vec(p);
-  for (int j = 0; j < p; ++j) {
-    lambda_l2_vec[j] = (penalty_mask[j] != 0) ? l2 : 0.0;
-  }
-
-  const Eigen::MatrixXd lambda_l2_mat =
-      glm_poisson_make_diagonal_l2_penalty(lambda_l2_vec, p);
-
-  const GLMPoissonResult r = glm_poisson_with_intercept_core(
-      X, y, offset, intercept0, beta0, standardize,
-      lambda_l2_mat, max_iter, tol, eps_mu);
-
+inline GLMPoissonENetResult glm_poisson_as_enet_result(
+    const GLMPoissonResult& r) {
   GLMPoissonENetResult out;
   out.intercept = r.intercept;
   out.beta = r.beta;
@@ -287,52 +192,335 @@ inline GLMPoissonENetResult glm_poisson_with_intercept_from_elasticnet_alpha0(
   return out;
 }
 
-inline GLMPoissonENetResult glm_poisson_without_intercept_from_elasticnet_alpha0(
+inline Eigen::VectorXd glm_poisson_identity_l2_from_penalty_factor(
+    double lambda,
+    const Eigen::VectorXd& penalty_factor) {
+  if (!(lambda >= 0.0) || !std::isfinite(lambda)) {
+    throw std::invalid_argument("lambda must be finite and >= 0");
+  }
+  return lambda * penalty_factor;
+}
+
+inline Eigen::MatrixXd glm_poisson_correlated_l2_from_penalty_factor(
+    double lambda,
+    const Eigen::MatrixXd& lambda_l2_mat,
+    const Eigen::VectorXd& penalty_factor) {
+  const int p = static_cast<int>(penalty_factor.size());
+  glm_poisson_validate_lambda_l2_mat(lambda_l2_mat, p);
+
+  if (!(lambda >= 0.0) || !std::isfinite(lambda)) {
+    throw std::invalid_argument("lambda must be finite and >= 0");
+  }
+
+  const Eigen::VectorXd sqrt_pf = penalty_factor.array().sqrt();
+  const Eigen::MatrixXd D = sqrt_pf.asDiagonal();
+  return lambda * (D * lambda_l2_mat * D);
+}
+
+// -----------------------------------------------------------------------------
+// Public API 1/4:
+// glm_poisson_identity
+// -----------------------------------------------------------------------------
+//
+// L2 penalty in standardized space:
+//
+//   0.5 * lambda * sum_j penalty_factor[j] * beta_j^2
+//
+// fit_intercept:
+//   true  -> with-intercept core
+//   false -> without-intercept core
+
+inline GLMPoissonResult glm_poisson_identity(
     const Eigen::MatrixXd& X,
     const Eigen::VectorXd& y,
     const Eigen::VectorXd& offset,
+    bool fit_intercept,
+    double intercept0,
     const Eigen::VectorXd& beta0,
     const Eigen::VectorXi& standardize,
-    const Eigen::VectorXi& penalty_mask,   // 0/1 length p
+    double lambda,
+    const Eigen::VectorXd& penalty_factor,
     int max_iter = 25,
     double tol = 1e-8,
-    double lambd = 1e-2,
-    double ridge = 1e-12,
     double eps_mu = 1e-15) {
 
   const int p = static_cast<int>(X.cols());
+  glm_poisson_validate_penalty_factor(penalty_factor, p);
 
-  if (penalty_mask.size() != p) {
-    throw std::invalid_argument("penalty_mask length must match X.cols()");
+  const Eigen::VectorXd lambda_l2_vec =
+      glm_poisson_identity_l2_from_penalty_factor(lambda, penalty_factor);
+
+  if (fit_intercept) {
+    return glm_poisson_with_intercept_core(
+        X, y, offset, intercept0, beta0, standardize,
+        lambda_l2_vec, max_iter, tol, eps_mu);
+  } else {
+    return glm_poisson_without_intercept_core(
+        X, y, offset, beta0, standardize,
+        lambda_l2_vec, max_iter, tol, eps_mu);
   }
-  if (!(lambd >= 0.0) || !std::isfinite(lambd)) {
-    throw std::invalid_argument("lambd must be finite and >= 0");
+}
+
+inline GLMPoissonResult glm_poisson_identity(
+    const Eigen::MatrixXd& X,
+    const Eigen::VectorXd& y,
+    const Eigen::VectorXd& offset,
+    bool fit_intercept,
+    double intercept0,
+    const Eigen::VectorXd& beta0,
+    const Eigen::VectorXi& standardize,
+    double lambda,
+    int max_iter = 25,
+    double tol = 1e-8,
+    double eps_mu = 1e-15) {
+
+  const int p = static_cast<int>(X.cols());
+  return glm_poisson_identity(
+      X, y, offset, fit_intercept, intercept0, beta0, standardize,
+      lambda, glm_poisson_default_penalty_factor(p),
+      max_iter, tol, eps_mu);
+}
+
+// -----------------------------------------------------------------------------
+// Public API 2/4:
+// glm_poisson_correlated
+// -----------------------------------------------------------------------------
+//
+// L2 penalty in standardized space:
+//
+//   0.5 * beta^T [ lambda * D^(1/2) * lambda_l2_mat * D^(1/2) ] beta
+//
+// where D = diag(penalty_factor)
+
+inline GLMPoissonResult glm_poisson_correlated(
+    const Eigen::MatrixXd& X,
+    const Eigen::VectorXd& y,
+    const Eigen::VectorXd& offset,
+    bool fit_intercept,
+    double intercept0,
+    const Eigen::VectorXd& beta0,
+    const Eigen::VectorXi& standardize,
+    const Eigen::MatrixXd& lambda_l2_mat,
+    double lambda,
+    const Eigen::VectorXd& penalty_factor,
+    int max_iter = 25,
+    double tol = 1e-8,
+    double eps_mu = 1e-15) {
+
+  const int p = static_cast<int>(X.cols());
+  glm_poisson_validate_penalty_factor(penalty_factor, p);
+
+  const Eigen::MatrixXd lambda_l2_eff =
+      glm_poisson_correlated_l2_from_penalty_factor(
+          lambda, lambda_l2_mat, penalty_factor);
+
+  if (fit_intercept) {
+    return glm_poisson_with_intercept_core(
+        X, y, offset, intercept0, beta0, standardize,
+        lambda_l2_eff, max_iter, tol, eps_mu);
+  } else {
+    return glm_poisson_without_intercept_core(
+        X, y, offset, beta0, standardize,
+        lambda_l2_eff, max_iter, tol, eps_mu);
   }
-  if (!(ridge >= 0.0) || !std::isfinite(ridge)) {
-    throw std::invalid_argument("ridge must be finite and >= 0");
+}
+
+inline GLMPoissonResult glm_poisson_correlated(
+    const Eigen::MatrixXd& X,
+    const Eigen::VectorXd& y,
+    const Eigen::VectorXd& offset,
+    bool fit_intercept,
+    double intercept0,
+    const Eigen::VectorXd& beta0,
+    const Eigen::VectorXi& standardize,
+    const Eigen::MatrixXd& lambda_l2_mat,
+    double lambda,
+    int max_iter = 25,
+    double tol = 1e-8,
+    double eps_mu = 1e-15) {
+
+  const int p = static_cast<int>(X.cols());
+  return glm_poisson_correlated(
+      X, y, offset, fit_intercept, intercept0, beta0, standardize,
+      lambda_l2_mat, lambda, glm_poisson_default_penalty_factor(p),
+      max_iter, tol, eps_mu);
+}
+
+// -----------------------------------------------------------------------------
+// Public API 3/4:
+// glmnet_poisson_identity
+// -----------------------------------------------------------------------------
+//
+// L1 penalty:
+//   sum_j alpha * lambda * penalty_factor[j] * |beta_j|
+//
+// L2 penalty:
+//   0.5 * sum_j (1-alpha) * lambda * penalty_factor[j] * beta_j^2
+//
+// If alpha == 0, route internally to glm_poisson_identity.
+
+inline GLMPoissonENetResult glmnet_poisson_identity(
+    const Eigen::MatrixXd& X,
+    const Eigen::VectorXd& y,
+    const Eigen::VectorXd& offset,
+    bool fit_intercept,
+    double intercept0,
+    const Eigen::VectorXd& beta0,
+    const Eigen::VectorXi& standardize,
+    double alpha,
+    double lambda,
+    const Eigen::VectorXd& penalty_factor,
+    int max_iter = 25,
+    double tol = 1e-8,
+    double eps_mu = 1e-15) {
+
+  const int p = static_cast<int>(X.cols());
+  glm_poisson_validate_penalty_factor(penalty_factor, p);
+
+  if (!(alpha >= 0.0 && alpha <= 1.0) || !std::isfinite(alpha)) {
+    throw std::invalid_argument("alpha must be finite and in [0,1]");
+  }
+  if (!(lambda >= 0.0) || !std::isfinite(lambda)) {
+    throw std::invalid_argument("lambda must be finite and >= 0");
   }
 
-  const double l2 = lambd + ridge;
+  if (alpha == 0.0) {
+    return glm_poisson_as_enet_result(
+        glm_poisson_identity(
+            X, y, offset, fit_intercept, intercept0, beta0, standardize,
+            lambda, penalty_factor, max_iter, tol, eps_mu));
+  }
 
+  Eigen::VectorXd lambda_l1_vec(p);
   Eigen::VectorXd lambda_l2_vec(p);
+
   for (int j = 0; j < p; ++j) {
-    lambda_l2_vec[j] = (penalty_mask[j] != 0) ? l2 : 0.0;
+    lambda_l1_vec[j] = alpha * lambda * penalty_factor[j];
+    lambda_l2_vec[j] = (1.0 - alpha) * lambda * penalty_factor[j];
   }
 
-  const Eigen::MatrixXd lambda_l2_mat =
-      glm_poisson_make_diagonal_l2_penalty(lambda_l2_vec, p);
+  if (fit_intercept) {
+    return glm_poisson_elasticnet_with_intercept_core(
+        X, y, offset, intercept0, beta0, standardize,
+        lambda_l1_vec, lambda_l2_vec,
+        max_iter, tol, eps_mu);
+  } else {
+    return glm_poisson_elasticnet_without_intercept_core(
+        X, y, offset, beta0, standardize,
+        lambda_l1_vec, lambda_l2_vec,
+        max_iter, tol, eps_mu);
+  }
+}
 
-  const GLMPoissonResult r = glm_poisson_without_intercept_core(
-      X, y, offset, beta0, standardize,
-      lambda_l2_mat, max_iter, tol, eps_mu);
+inline GLMPoissonENetResult glmnet_poisson_identity(
+    const Eigen::MatrixXd& X,
+    const Eigen::VectorXd& y,
+    const Eigen::VectorXd& offset,
+    bool fit_intercept,
+    double intercept0,
+    const Eigen::VectorXd& beta0,
+    const Eigen::VectorXi& standardize,
+    double alpha,
+    double lambda,
+    int max_iter = 25,
+    double tol = 1e-8,
+    double eps_mu = 1e-15) {
 
-  GLMPoissonENetResult out;
-  out.intercept = r.intercept;
-  out.beta = r.beta;
-  out.converged = r.converged;
-  out.n_outer = r.n_iter;
-  out.n_inner = 0;
-  out.max_delta = 0.0;
-  out.max_delta_inner = 0.0;
-  return out;
+  const int p = static_cast<int>(X.cols());
+  return glmnet_poisson_identity(
+      X, y, offset, fit_intercept, intercept0, beta0, standardize,
+      alpha, lambda, glm_poisson_default_penalty_factor(p),
+      max_iter, tol, eps_mu);
+}
+
+// -----------------------------------------------------------------------------
+// Public API 4/4:
+// glmnet_poisson_correlated
+// -----------------------------------------------------------------------------
+//
+// L1 penalty:
+//   sum_j alpha * lambda * penalty_factor[j] * |beta_j|
+//
+// L2 penalty:
+//   0.5 * beta^T [ (1-alpha) * lambda * D^(1/2) * lambda_l2_mat * D^(1/2) ] beta
+//
+// If alpha == 0, route internally to glm_poisson_correlated.
+
+inline GLMPoissonENetResult glmnet_poisson_correlated(
+    const Eigen::MatrixXd& X,
+    const Eigen::VectorXd& y,
+    const Eigen::VectorXd& offset,
+    bool fit_intercept,
+    double intercept0,
+    const Eigen::VectorXd& beta0,
+    const Eigen::VectorXi& standardize,
+    const Eigen::MatrixXd& lambda_l2_mat,
+    double alpha,
+    double lambda,
+    const Eigen::VectorXd& penalty_factor,
+    int max_iter = 25,
+    double tol = 1e-8,
+    double eps_mu = 1e-15) {
+
+  const int p = static_cast<int>(X.cols());
+  glm_poisson_validate_penalty_factor(penalty_factor, p);
+  glm_poisson_validate_lambda_l2_mat(lambda_l2_mat, p);
+
+  if (!(alpha >= 0.0 && alpha <= 1.0) || !std::isfinite(alpha)) {
+    throw std::invalid_argument("alpha must be finite and in [0,1]");
+  }
+  if (!(lambda >= 0.0) || !std::isfinite(lambda)) {
+    throw std::invalid_argument("lambda must be finite and >= 0");
+  }
+
+  if (alpha == 0.0) {
+    return glm_poisson_as_enet_result(
+        glm_poisson_correlated(
+            X, y, offset, fit_intercept, intercept0, beta0, standardize,
+            lambda_l2_mat, lambda, penalty_factor, max_iter, tol, eps_mu));
+  }
+
+  Eigen::VectorXd lambda_l1_vec(p);
+  for (int j = 0; j < p; ++j) {
+    lambda_l1_vec[j] = alpha * lambda * penalty_factor[j];
+  }
+
+  const Eigen::MatrixXd lambda_l2_eff =
+      glm_poisson_correlated_l2_from_penalty_factor(
+          (1.0 - alpha) * lambda, lambda_l2_mat, penalty_factor);
+
+  if (fit_intercept) {
+    return glm_poisson_elasticnet_with_intercept_core(
+        X, y, offset, intercept0, beta0, standardize,
+        lambda_l1_vec, lambda_l2_eff,
+        max_iter, tol, eps_mu);
+  } else {
+    return glm_poisson_elasticnet_without_intercept_core(
+        X, y, offset, beta0, standardize,
+        lambda_l1_vec, lambda_l2_eff,
+        max_iter, tol, eps_mu);
+  }
+}
+
+inline GLMPoissonENetResult glmnet_poisson_correlated(
+    const Eigen::MatrixXd& X,
+    const Eigen::VectorXd& y,
+    const Eigen::VectorXd& offset,
+    bool fit_intercept,
+    double intercept0,
+    const Eigen::VectorXd& beta0,
+    const Eigen::VectorXi& standardize,
+    const Eigen::MatrixXd& lambda_l2_mat,
+    double alpha,
+    double lambda,
+    int max_iter = 25,
+    double tol = 1e-8,
+    double eps_mu = 1e-15) {
+
+  const int p = static_cast<int>(X.cols());
+  return glmnet_poisson_correlated(
+      X, y, offset, fit_intercept, intercept0, beta0, standardize,
+      lambda_l2_mat, alpha, lambda,
+      glm_poisson_default_penalty_factor(p),
+      max_iter, tol, eps_mu);
 }

@@ -18,7 +18,7 @@ class GLMPoissonENetFit(TypedDict):
     max_delta_inner: float
 
 
-def glm_poisson_elasticnet(
+def glmnet_poisson(
     X: np.ndarray,
     y: np.ndarray,
     offset: Optional[np.ndarray] = None,
@@ -29,13 +29,16 @@ def glm_poisson_elasticnet(
     max_iter: int = 25,
     tol: float = 1e-8,
     standardize: Optional[np.ndarray] = None,
-    penalty: Optional[np.ndarray] = None,
+    penalty_factor: Optional[np.ndarray] = None,
     alpha: float = 0.5,
-    lambd: float = 1e-2,
-    ridge: float = 1e-12,
+    lambda_: float = 1.0,
+    lambda_l2_mat: Optional[np.ndarray] = None,
     eps_mu: float = 1e-15,
 ) -> GLMPoissonENetFit:
-    """ElasticNet Poisson GLM (log link) via C++ (IRLS outer + Coordinate Descent inner).
+    """ElasticNet Poisson GLM (log link) via C++.
+
+    Uses IRLS on the outer loop and coordinate descent on the inner loop
+    when L1 is present.
 
     Model (with intercept):
         eta = intercept + X @ beta + offset
@@ -47,15 +50,18 @@ def glm_poisson_elasticnet(
 
     Notes
     -----
-    - `y` is count data (nonnegative). Passed as float64 to C++.
+    - `y` is count data and is passed as float64 to C++.
     - `offset` is typically log-exposure. If None, uses zeros.
     - `standardize` is a 0/1 mask of length p:
-        * with_intercept: 1 -> center+scale
-        * without_intercept: 1 -> scale-only (no centering)
-      If None, defaults to all-ones.
-    - `penalty` is a 0/1 mask of length p applied to beta entries.
-      If None, defaults to all-ones (penalize all betas).
-      Intercept is never penalized.
+        * fit_intercept=True  -> 1 means center+scale
+        * fit_intercept=False -> 1 means scale-only (no centering)
+      If None, defaults to all-ones in the C++ layer.
+    - `penalty_factor` is a nonnegative vector of length p controlling
+      per-coefficient penalty strength. If None, defaults to all-ones.
+    - If `lambda_l2_mat` is None, identity-L2 penalty is used.
+    - If `lambda_l2_mat` is provided, correlated L2 penalty is used.
+    - If `alpha == 0`, the implementation routes internally to the GLM
+      (L2-only) solver.
     """
     X = np.asarray(X, dtype=np.float64)
     y = np.asarray(y, dtype=np.float64)
@@ -82,25 +88,49 @@ def glm_poisson_elasticnet(
             raise ValueError("beta0 length must match X.cols()")
 
     std_arg = None if standardize is None else np.asarray(standardize, dtype=np.int32)
-    pen_arg = None if penalty is None else np.asarray(penalty, dtype=np.int32)
+    if std_arg is not None and std_arg.shape != (p,):
+        raise ValueError("standardize length must match X.cols()")
 
-    if fit_intercept:
-        res = _cglm.glm_poisson_elasticnet_with_intercept(
-            X, y, offset,
-            float(intercept0), beta0,
-            std_arg, pen_arg,
-            int(max_iter), float(tol),
-            float(alpha), float(lambd),
-            float(ridge), float(eps_mu),
+    pf_arg = None if penalty_factor is None else np.asarray(penalty_factor, dtype=np.float64)
+    if pf_arg is not None and pf_arg.shape != (p,):
+        raise ValueError("penalty_factor length must match X.cols()")
+
+    if lambda_l2_mat is None:
+        res = _cglm.glmnet_poisson_identity(
+            X,
+            y,
+            offset,
+            bool(fit_intercept),
+            float(intercept0),
+            beta0,
+            std_arg,
+            float(alpha),
+            float(lambda_),
+            pf_arg,
+            int(max_iter),
+            float(tol),
+            float(eps_mu),
         )
     else:
-        res = _cglm.glm_poisson_elasticnet_without_intercept(
-            X, y, offset,
+        lambda_l2_mat = np.asarray(lambda_l2_mat, dtype=np.float64)
+        if lambda_l2_mat.shape != (p, p):
+            raise ValueError("lambda_l2_mat must have shape (p, p)")
+
+        res = _cglm.glmnet_poisson_correlated(
+            X,
+            y,
+            offset,
+            bool(fit_intercept),
+            float(intercept0),
             beta0,
-            std_arg, pen_arg,
-            int(max_iter), float(tol),
-            float(alpha), float(lambd),
-            float(ridge), float(eps_mu),
+            std_arg,
+            lambda_l2_mat,
+            float(alpha),
+            float(lambda_),
+            pf_arg,
+            int(max_iter),
+            float(tol),
+            float(eps_mu),
         )
 
     return {

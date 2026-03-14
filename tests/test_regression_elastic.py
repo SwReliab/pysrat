@@ -1,6 +1,6 @@
 import numpy as np
 from pysrat.regression import glm_binomial_elasticnet
-from pysrat.regression import glm_poisson_elasticnet
+from pysrat.regression import glmnet_poisson
 
 def test_glm_binomial_elasticnet_basic():
     np.random.seed(4)
@@ -113,10 +113,10 @@ def test_glm_poisson_elasticnet_basic():
     mu = np.exp(eta)
     y = np.random.poisson(mu)
 
-    fit = glm_poisson_elasticnet(
+    fit = glmnet_poisson(
         X, y,
         alpha=1.0,
-        lambd=0.1,
+        lambda_=0.1,
         max_iter=50,
         tol=1e-8,
         fit_intercept=False,
@@ -125,7 +125,7 @@ def test_glm_poisson_elasticnet_basic():
     beta_hat = fit["beta"]
 
     assert beta_hat.shape == (p,)
-    assert fit["converged"] or fit["n_outer"] == 50
+    assert fit["converged"] or fit["n_iter"] == 50
 
     # signal part roughly correct
     assert np.linalg.norm(beta_hat[:2] - beta_true[:2]) < 1.0
@@ -147,11 +147,11 @@ def test_glm_poisson_elasticnet_with_offset():
     mu = np.exp(eta)
     y = np.random.poisson(mu)
 
-    fit = glm_poisson_elasticnet(
+    fit = glmnet_poisson(
         X, y,
         offset=offset,
         alpha=0.8,
-        lambd=0.05,
+        lambda_=0.05,
         max_iter=50,
         fit_intercept=False,
     )
@@ -173,14 +173,14 @@ def test_glm_poisson_elasticnet_penalty_mask():
     mu = np.exp(eta)
     y = np.random.poisson(mu)
 
-    # first two coefficients not penalized
-    penalty = np.array([0, 0, 1, 1], dtype=int)
+    # first two coefficients are unpenalized
+    penalty_factor = np.array([0.0, 0.0, 1.0, 1.0], dtype=float)
 
-    fit = glm_poisson_elasticnet(
+    fit = glmnet_poisson(
         X, y,
-        penalty=penalty,
+        penalty_factor=penalty_factor,
         alpha=1.0,
-        lambd=0.2,
+        lambda_=0.2,
         max_iter=50,
         fit_intercept=False,
     )
