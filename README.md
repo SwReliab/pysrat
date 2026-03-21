@@ -42,7 +42,7 @@ from pysrat.nhpp.models import ExponentialNHPP
 from pysrat.nhpp.plot import plot_mvf
 
 # Create NHPP data from grouped intervals
-data = NHPPData.from_intervals(time=[1, 1, 1, 1], fault=[0, 1, 0, 5])
+data = NHPPData.from_intervals(intervals=[1, 1, 1, 1], counts=[0, 1, 0, 5])
 
 # Fit model
 model = ExponentialNHPP().fit(data)
@@ -59,9 +59,9 @@ plot_mvf(data, model)
 
 pysrat accepts several NHPP data formats via `pysrat.data.nhpp.NHPPData`:
 
-- Interval/grouped data: `NHPPData.from_intervals(time=..., fault=..., type=...)`
-- Counts per interval: `NHPPData.from_counts(fault=...)`
-- Exact fault times: `NHPPData.from_fault_times(times=..., te=... )`
+- Interval/grouped data: `NHPPData.from_intervals(intervals=..., counts=..., on_boundary=...)`
+- Counts per interval: `NHPPData.from_intervals(counts=...)`
+- Time-only data with final observation time: `NHPPData.from_intervals(intervals=..., te=...)`
 
 ### Available models
 
@@ -86,7 +86,7 @@ Common models are exported under `pysrat.nhpp.models`:
 from pysrat.data.nhpp import NHPPData
 from pysrat.nhpp.models import CanonicalPhaseTypeNHPP
 
-data = NHPPData.from_intervals(time=[1, 2, 1.5], fault=[1, 0, 2], type=[0, 1, 0])
+data = NHPPData.from_intervals(intervals=[1, 2, 1.5], counts=[1, 0, 2], on_boundary=[0, 1, 0])
 model = CanonicalPhaseTypeNHPP(3).fit(data)
 print(model.params_)
 ```
@@ -117,7 +117,7 @@ Compare models using `aic_` or `llf_`:
 
 ```python
 from pysrat.nhpp.models import ExponentialNHPP, GammaNHPP
-data = NHPPData.from_counts([0, 1, 0, 5])
+data = NHPPData.from_intervals(counts=[0, 1, 0, 5])
 m1 = ExponentialNHPP().fit(data)
 m2 = GammaNHPP().fit(data)
 best = min((m1, m2), key=lambda m: m.aic_)
