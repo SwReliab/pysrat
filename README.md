@@ -61,7 +61,7 @@ pysrat accepts several NHPP data formats via `pysrat.data.nhpp.NHPPData`:
 
 - Interval/grouped data: `NHPPData.from_intervals(intervals=..., counts=..., on_boundary=...)`
 - Counts per interval: `NHPPData.from_intervals(counts=...)`
-- Time-only data with final observation time: `NHPPData.from_intervals(intervals=..., te=...)`
+- Time data (without counts): `NHPPData.from_intervals(intervals=..., on_boundary=...)` or `NHPPData.from_intervals(intervals=..., te=...)`
 
 ### Available models
 

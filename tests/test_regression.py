@@ -1,6 +1,7 @@
 import numpy as np
-from pysrat.regression import glm_binomial
-from pysrat.regression import glm_poisson
+import pytest
+from pysrat.regression.glm_binomial import glm_binomial
+from pysrat.regression.glm_poisson import glm_poisson
 
 def test_glm_binomial_basic():
     np.random.seed(0)
@@ -28,6 +29,22 @@ def test_glm_binomial_aggregated():
     beta_hat = glm_binomial(X, y_prop, n_trials=n_trials, y_is_proportion=True)["beta"]
     assert beta_hat.shape == (p,)
     assert np.all(np.isfinite(beta_hat))
+
+
+def test_glm_binomial_rejects_invalid_binomial_response():
+    X = np.array([[0.0], [1.0], [2.0]], dtype=float)
+    n_trials = np.array([1.0, 2.0, 1.0], dtype=float)
+
+    with pytest.raises(ValueError, match="0 <= y <= n_trials"):
+        glm_binomial(X, np.array([0.0, 3.0, 1.0]), n_trials=n_trials)
+
+    with pytest.raises(ValueError, match="0 <= y <= 1"):
+        glm_binomial(
+            X,
+            np.array([0.0, 1.2, 0.5]),
+            n_trials=n_trials,
+            y_is_proportion=True,
+        )
 
 def test_glm_poisson_basic():
     np.random.seed(2)

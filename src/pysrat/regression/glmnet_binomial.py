@@ -1,3 +1,4 @@
+# src/pysrat/regression/glmnet_binomial.py
 from __future__ import annotations
 
 from typing import Optional, TypedDict
@@ -8,14 +9,17 @@ from .. import _glm as _cglm
 from ._binomial_validation import prepare_binomial_response
 
 
-class GLMBinomialFit(TypedDict):
+class GLMBinomialENetFit(TypedDict):
     intercept: float
     beta: np.ndarray
     converged: bool
     n_iter: int
+    n_inner: int
+    max_delta: float
+    max_delta_inner: float
 
 
-def glm_binomial(
+def glmnet_binomial(
     X: np.ndarray,
     y: np.ndarray,
     n_trials: Optional[np.ndarray] = None,
@@ -29,68 +33,48 @@ def glm_binomial(
     tol: float = 1e-8,
     y_is_proportion: bool = False,
     standardize: Optional[np.ndarray] = None,
-    lambda_: float = 1.0,
     penalty_factor: Optional[np.ndarray] = None,
+    alpha: float = 0.5,
+    lambda_: float = 1.0,
     lambda_l2_mat: Optional[np.ndarray] = None,
     eps_mu: float = 1e-15,
     eps_dmu: float = 1e-15,
-) -> GLMBinomialFit:
-    """Binomial GLM via C++ IRLS.
+) -> GLMBinomialENetFit:
+    """ElasticNet Binomial GLM via C++.
 
-    Model
-    -----
-    Aggregated binomial model:
+    Uses IRLS on the outer loop and coordinate descent on the inner loop
+    when L1 is present.
+
+    Model (with intercept):
         y_i ~ Binomial(n_trials_i, mu_i)
         g(mu_i) = intercept + X @ beta + offset
 
-    Parameters
-    ----------
-    X : ndarray, shape (n, p)
-    y : ndarray, shape (n,)
-        Either success counts or proportions depending on y_is_proportion.
-    n_trials : ndarray, shape (n,), optional
-        Number of trials for each observation. If None, uses ones.
-    offset : ndarray, shape (n,), optional
-        Additive offset on the linear predictor. If None, uses zeros.
-    intercept0 : float
-        Initial intercept value. Ignored when fit_intercept=False.
-    beta0 : ndarray, shape (p,), optional
-        Initial coefficient vector. If None, uses zeros.
-    fit_intercept : bool
-        If True, estimate intercept separately from X.
-    link : str
-        Link name passed to the C++ layer, e.g. "logit", "probit", "cloglog".
-    max_iter : int
-    tol : float
-    y_is_proportion : bool
-        If True, interpret y as proportions and internally convert to
-        success counts by y * n_trials.
-    standardize : ndarray, shape (p,), optional
-        0/1 mask. If None, defaults to all-ones in the C++ layer.
-        - fit_intercept=True  -> 1 means center+scale
-        - fit_intercept=False -> 1 means scale only
-    lambda_ : float
-        Overall L2 penalty scale.
-    penalty_factor : ndarray, shape (p,), optional
-        Per-coefficient penalty weights. If None, uses ones.
-    lambda_l2_mat : ndarray, shape (p, p), optional
-        If None, uses identity-L2 penalty.
-        If provided, uses correlated L2 penalty matrix.
-    eps_mu : float
-        Lower/upper clipping level for mu.
-    eps_dmu : float
-        Lower clipping level for dmu/deta in IRLS.
+    Model (without intercept):
+        y_i ~ Binomial(n_trials_i, mu_i)
+        g(mu_i) = X @ beta + offset
 
-    Returns
-    -------
-    dict with keys:
-        intercept, beta, converged, n_iter
+    Notes
+    -----
+    - `y` is interpreted as success counts unless `y_is_proportion=True`.
+      In that case, `y * n_trials` is passed to C++.
+    - `n_trials` defaults to ones when omitted.
+    - `offset` defaults to zeros when omitted.
+    - `standardize` is a 0/1 mask of length p:
+        * fit_intercept=True  -> 1 means center+scale
+        * fit_intercept=False -> 1 means scale-only (no centering)
+      If None, defaults to all-ones in the C++ layer.
+    - `penalty_factor` is a nonnegative vector of length p controlling
+      per-coefficient penalty strength. If None, defaults to all-ones.
+    - If `lambda_l2_mat` is None, identity-L2 penalty is used.
+    - If `lambda_l2_mat` is provided, correlated L2 penalty is used.
+    - If `alpha == 0`, the implementation routes internally to the GLM
+      (L2-only) solver.
     """
     X = np.asarray(X, dtype=np.float64)
     y = np.asarray(y, dtype=np.float64)
 
     if X.ndim != 2:
-      raise ValueError("X must be 2D")
+        raise ValueError("X must be 2D")
     n_obs, p = X.shape
 
     if y.shape != (n_obs,):
@@ -132,7 +116,7 @@ def glm_binomial(
         raise ValueError("penalty_factor length must match X.cols()")
 
     if lambda_l2_mat is None:
-        res = _cglm.glm_binomial_identity(
+        res = _cglm.glmnet_binomial_identity(
             X,
             y_call,
             n_trials,
@@ -141,6 +125,7 @@ def glm_binomial(
             float(intercept0),
             beta0,
             std_arg,
+            float(alpha),
             float(lambda_),
             pf_arg,
             int(max_iter),
@@ -154,7 +139,7 @@ def glm_binomial(
         if lambda_l2_mat.shape != (p, p):
             raise ValueError("lambda_l2_mat must have shape (p, p)")
 
-        res = _cglm.glm_binomial_correlated(
+        res = _cglm.glmnet_binomial_correlated(
             X,
             y_call,
             n_trials,
@@ -164,6 +149,7 @@ def glm_binomial(
             beta0,
             std_arg,
             lambda_l2_mat,
+            float(alpha),
             float(lambda_),
             pf_arg,
             int(max_iter),
@@ -177,5 +163,8 @@ def glm_binomial(
         "intercept": float(res.intercept),
         "beta": np.asarray(res.beta, dtype=np.float64),
         "converged": bool(res.converged),
-        "n_iter": int(res.n_iter),
+        "n_iter": int(res.n_outer),
+        "n_inner": int(res.n_inner),
+        "max_delta": float(res.max_delta),
+        "max_delta_inner": float(res.max_delta_inner),
     }

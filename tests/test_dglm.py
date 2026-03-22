@@ -3,6 +3,7 @@ import pandas as pd
 
 from pysrat.data import DMetricsData
 from pysrat.nhpp.multifactor import MFCloglogNHPP, MFProbitNHPP, MFLogitNHPP
+import pysrat.nhpp.multifactor._dglm as dglm_mod
 
 def make_synthetic(seed=0, n=80):
     rng = np.random.default_rng(seed)
@@ -116,3 +117,85 @@ def test_dglm_mvf_monotone_and_bounds():
     assert mvf[-1] <= omega_hat + 1e-8
     # mvf is nonnegative
     assert np.all(mvf >= -1e-12)
+
+
+def test_dglm_forwards_new_glm_binomial_kwargs(monkeypatch):
+    data = make_synthetic(seed=4, n=30)
+    model = MFLogitNHPP(has_intercept=True)
+    params = model.init_params(data)
+
+    captured = {}
+
+    def _stub_glm_binomial(**kwargs):
+        captured.update(kwargs)
+        p = kwargs["X"].shape[1]
+        return {
+            "intercept": float(kwargs.get("intercept0", 0.0)),
+            "beta": np.zeros(p, dtype=float),
+            "converged": True,
+            "n_iter": 1,
+        }
+
+    monkeypatch.setattr(dglm_mod, "glm_binomial", _stub_glm_binomial)
+
+    penalty_factor = np.array([0.0, 2.0], dtype=float)
+    lambda_l2_mat = np.array([[1.0, 0.1], [0.1, 1.0]], dtype=float)
+    standardize = np.array([1, 0], dtype=int)
+
+    model.em_step(
+        params,
+        data,
+        max_glm_iter=7,
+        glm_tol=1e-6,
+        glm_lambda=0.3,
+        glm_penalty_factor=penalty_factor,
+        glm_lambda_l2_mat=lambda_l2_mat,
+        glm_standardize=standardize,
+        glm_eps_mu=1e-10,
+        glm_eps_dmu=1e-9,
+    )
+
+    assert captured["max_iter"] == 7
+    assert np.isclose(captured["tol"], 1e-6)
+    assert np.isclose(captured["lambda_"], 0.3)
+    assert np.allclose(captured["penalty_factor"], penalty_factor)
+    assert np.allclose(captured["lambda_l2_mat"], lambda_l2_mat)
+    assert np.array_equal(captured["standardize"], standardize)
+    assert np.isclose(captured["eps_mu"], 1e-10)
+    assert np.isclose(captured["eps_dmu"], 1e-9)
+    assert captured["y_is_proportion"] is True
+
+
+def test_dglm_forwards_legacy_glm_binomial_kwargs(monkeypatch):
+    data = make_synthetic(seed=5, n=30)
+    model = MFLogitNHPP(has_intercept=True)
+    params = model.init_params(data)
+
+    captured = {}
+
+    def _stub_glm_binomial(**kwargs):
+        captured.update(kwargs)
+        p = kwargs["X"].shape[1]
+        return {
+            "intercept": float(kwargs.get("intercept0", 0.0)),
+            "beta": np.zeros(p, dtype=float),
+            "converged": True,
+            "n_iter": 1,
+        }
+
+    monkeypatch.setattr(dglm_mod, "glm_binomial", _stub_glm_binomial)
+
+    penalty = np.array([0.5, 1.5], dtype=float)
+    l2matrix = np.array([[1.0, 0.2], [0.2, 1.0]], dtype=float)
+
+    model.em_step(
+        params,
+        data,
+        lambd=0.2,
+        penalty=penalty,
+        l2matrix=l2matrix,
+    )
+
+    assert np.isclose(captured["lambda_"], 0.2)
+    assert np.allclose(captured["penalty_factor"], penalty)
+    assert np.allclose(captured["lambda_l2_mat"], l2matrix)

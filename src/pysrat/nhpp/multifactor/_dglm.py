@@ -162,6 +162,13 @@ class DynamicGLMBase(NHPPModel):
         y = fault / n_trials
 
         # M-step: aggregated binomial IRLS (y is proportion -> convert inside glm_binomial)
+        # Keep default behavior effectively unpenalized, while accepting both
+        # new and legacy regularization keyword names from fit(...).
+        glm_lambda = kwargs.get("glm_lambda", kwargs.get("lambd", 0.0))
+        glm_penalty_factor = kwargs.get("glm_penalty_factor", kwargs.get("penalty", None))
+        glm_lambda_l2_mat = kwargs.get("glm_lambda_l2_mat", kwargs.get("l2matrix", None))
+        glm_standardize = kwargs.get("glm_standardize", kwargs.get("standardize", None))
+
         fit = glm_binomial(
             X=X,
             y=y,
@@ -174,6 +181,12 @@ class DynamicGLMBase(NHPPModel):
             max_iter=int(kwargs.get("max_glm_iter", 50)),
             tol=float(kwargs.get("glm_tol", 1e-9)),
             y_is_proportion=True,
+            standardize=glm_standardize,
+            lambda_=float(glm_lambda),
+            penalty_factor=glm_penalty_factor,
+            lambda_l2_mat=glm_lambda_l2_mat,
+            eps_mu=float(kwargs.get("glm_eps_mu", 1e-15)),
+            eps_dmu=float(kwargs.get("glm_eps_dmu", 1e-15)),
         )
 
         if self.has_intercept:

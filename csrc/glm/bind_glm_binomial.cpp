@@ -16,18 +16,40 @@
 
 namespace py = pybind11;
 
-static GLMBinomialResult glm_binomial_with_intercept_py(
+static Eigen::VectorXd parse_penalty_factor(py::object penalty_factor_obj, int p) {
+  if (penalty_factor_obj.is_none()) {
+    return Eigen::VectorXd::Ones(p);
+  }
+
+  py::array_t<double, py::array::c_style | py::array::forcecast> penalty_factor =
+      penalty_factor_obj.cast<py::array_t<double, py::array::c_style | py::array::forcecast>>();
+  auto pfb = penalty_factor.request();
+
+  if (pfb.ndim != 1) {
+    throw std::invalid_argument("penalty_factor must be 1D");
+  }
+  if (static_cast<int>(pfb.shape[0]) != p) {
+    throw std::invalid_argument("penalty_factor length must match X.cols()");
+  }
+
+  Eigen::Map<const Eigen::VectorXd> pf_e(static_cast<const double*>(pfb.ptr), p);
+  return pf_e;
+}
+
+static GLMBinomialResult glm_binomial_identity_py(
     py::array_t<double, py::array::c_style | py::array::forcecast> X,
     py::array_t<double, py::array::c_style | py::array::forcecast> y,
     py::array_t<double, py::array::c_style | py::array::forcecast> n_trials,
     py::array_t<double, py::array::c_style | py::array::forcecast> offset,
+    bool fit_intercept,
     double intercept0,
     py::array_t<double, py::array::c_style | py::array::forcecast> beta0,
     py::object standardize_obj,
+    double lambda,
+    py::object penalty_factor_obj,
     int max_iter,
     double tol,
     const std::string& link,
-    double ridge,
     double eps_mu,
     double eps_dmu) {
 
@@ -43,14 +65,17 @@ static GLMBinomialResult glm_binomial_with_intercept_py(
   auto ob = offset.request();
   auto bb = beta0.request();
 
-  if (yb.ndim != 1 || nb.ndim != 1 || ob.ndim != 1 || bb.ndim != 1)
+  if (yb.ndim != 1 || nb.ndim != 1 || ob.ndim != 1 || bb.ndim != 1) {
     throw std::invalid_argument("y/n_trials/offset/beta0 must be 1D");
+  }
   if (static_cast<int>(yb.shape[0]) != n ||
       static_cast<int>(nb.shape[0]) != n ||
-      static_cast<int>(ob.shape[0]) != n)
+      static_cast<int>(ob.shape[0]) != n) {
     throw std::invalid_argument("y/n_trials/offset length must match X.rows()");
-  if (static_cast<int>(bb.shape[0]) != p)
+  }
+  if (static_cast<int>(bb.shape[0]) != p) {
     throw std::invalid_argument("beta0 length must match X.cols()");
+  }
 
   Eigen::Map<const Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> X_e(
       static_cast<const double*>(Xb.ptr), n, p);
@@ -59,25 +84,33 @@ static GLMBinomialResult glm_binomial_with_intercept_py(
   Eigen::Map<const Eigen::VectorXd> off_e(static_cast<const double*>(ob.ptr), n);
   Eigen::Map<const Eigen::VectorXd> b0_e(static_cast<const double*>(bb.ptr), p);
 
-  const Eigen::VectorXi stdmask = glm_pybind::parse_standardize_mask(standardize_obj, p);
+  const Eigen::VectorXi stdmask =
+      glm_pybind::parse_standardize_mask(standardize_obj, p);
+  const Eigen::VectorXd penalty_factor_e =
+      parse_penalty_factor(penalty_factor_obj, p);
 
-  return glm_binomial_with_intercept(
+  return glm_binomial_identity(
       X_e, y_e, n_e, off_e,
-      intercept0, b0_e, stdmask,
-      max_iter, tol, link, ridge, eps_mu, eps_dmu);
+      fit_intercept, intercept0, b0_e, stdmask,
+      lambda, penalty_factor_e,
+      max_iter, tol, link, eps_mu, eps_dmu);
 }
 
-static GLMBinomialResult glm_binomial_without_intercept_py(
+static GLMBinomialResult glm_binomial_correlated_py(
     py::array_t<double, py::array::c_style | py::array::forcecast> X,
     py::array_t<double, py::array::c_style | py::array::forcecast> y,
     py::array_t<double, py::array::c_style | py::array::forcecast> n_trials,
     py::array_t<double, py::array::c_style | py::array::forcecast> offset,
+    bool fit_intercept,
+    double intercept0,
     py::array_t<double, py::array::c_style | py::array::forcecast> beta0,
     py::object standardize_obj,
+    py::array_t<double, py::array::c_style | py::array::forcecast> lambda_l2_mat,
+    double lambda,
+    py::object penalty_factor_obj,
     int max_iter,
     double tol,
     const std::string& link,
-    double ridge,
     double eps_mu,
     double eps_dmu) {
 
@@ -92,15 +125,26 @@ static GLMBinomialResult glm_binomial_without_intercept_py(
   auto nb = n_trials.request();
   auto ob = offset.request();
   auto bb = beta0.request();
+  auto lb = lambda_l2_mat.request();
 
-  if (yb.ndim != 1 || nb.ndim != 1 || ob.ndim != 1 || bb.ndim != 1)
+  if (yb.ndim != 1 || nb.ndim != 1 || ob.ndim != 1 || bb.ndim != 1) {
     throw std::invalid_argument("y/n_trials/offset/beta0 must be 1D");
+  }
   if (static_cast<int>(yb.shape[0]) != n ||
       static_cast<int>(nb.shape[0]) != n ||
-      static_cast<int>(ob.shape[0]) != n)
+      static_cast<int>(ob.shape[0]) != n) {
     throw std::invalid_argument("y/n_trials/offset length must match X.rows()");
-  if (static_cast<int>(bb.shape[0]) != p)
+  }
+  if (static_cast<int>(bb.shape[0]) != p) {
     throw std::invalid_argument("beta0 length must match X.cols()");
+  }
+  if (lb.ndim != 2) {
+    throw std::invalid_argument("lambda_l2_mat must be 2D");
+  }
+  if (static_cast<int>(lb.shape[0]) != p ||
+      static_cast<int>(lb.shape[1]) != p) {
+    throw std::invalid_argument("lambda_l2_mat must be p x p");
+  }
 
   Eigen::Map<const Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> X_e(
       static_cast<const double*>(Xb.ptr), n, p);
@@ -108,13 +152,19 @@ static GLMBinomialResult glm_binomial_without_intercept_py(
   Eigen::Map<const Eigen::VectorXd> n_e(static_cast<const double*>(nb.ptr), n);
   Eigen::Map<const Eigen::VectorXd> off_e(static_cast<const double*>(ob.ptr), n);
   Eigen::Map<const Eigen::VectorXd> b0_e(static_cast<const double*>(bb.ptr), p);
+  Eigen::Map<const Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> lambda_l2_mat_e(
+      static_cast<const double*>(lb.ptr), p, p);
 
-  const Eigen::VectorXi stdmask = glm_pybind::parse_standardize_mask(standardize_obj, p);
+  const Eigen::VectorXi stdmask =
+      glm_pybind::parse_standardize_mask(standardize_obj, p);
+  const Eigen::VectorXd penalty_factor_e =
+      parse_penalty_factor(penalty_factor_obj, p);
 
-  return glm_binomial_without_intercept(
+  return glm_binomial_correlated(
       X_e, y_e, n_e, off_e,
-      b0_e, stdmask,
-      max_iter, tol, link, ridge, eps_mu, eps_dmu);
+      fit_intercept, intercept0, b0_e, stdmask,
+      lambda_l2_mat_e, lambda, penalty_factor_e,
+      max_iter, tol, link, eps_mu, eps_dmu);
 }
 
 void bind_glm_binomial(py::module_& m) {
@@ -124,19 +174,38 @@ void bind_glm_binomial(py::module_& m) {
       .def_readonly("converged", &GLMBinomialResult::converged)
       .def_readonly("n_iter", &GLMBinomialResult::n_iter);
 
-  m.def("glm_binomial_with_intercept", &glm_binomial_with_intercept_py,
-        py::arg("X"), py::arg("y"), py::arg("n_trials"), py::arg("offset"),
-        py::arg("intercept0"), py::arg("beta0"),
-        py::arg("standardize") = py::none(),
-        py::arg("max_iter") = 25, py::arg("tol") = 1e-8,
-        py::arg("link") = "logit",
-        py::arg("ridge") = 1e-12, py::arg("eps_mu") = 1e-15, py::arg("eps_dmu") = 1e-15);
-
-  m.def("glm_binomial_without_intercept", &glm_binomial_without_intercept_py,
-        py::arg("X"), py::arg("y"), py::arg("n_trials"), py::arg("offset"),
+  m.def("glm_binomial_identity", &glm_binomial_identity_py,
+        py::arg("X"),
+        py::arg("y"),
+        py::arg("n_trials"),
+        py::arg("offset"),
+        py::arg("fit_intercept") = true,
+        py::arg("intercept0") = 0.0,
         py::arg("beta0"),
         py::arg("standardize") = py::none(),
-        py::arg("max_iter") = 25, py::arg("tol") = 1e-8,
+        py::arg("lambda") = 1.0,
+        py::arg("penalty_factor") = py::none(),
+        py::arg("max_iter") = 25,
+        py::arg("tol") = 1e-8,
         py::arg("link") = "logit",
-        py::arg("ridge") = 1e-12, py::arg("eps_mu") = 1e-15, py::arg("eps_dmu") = 1e-15);
+        py::arg("eps_mu") = 1e-15,
+        py::arg("eps_dmu") = 1e-15);
+
+  m.def("glm_binomial_correlated", &glm_binomial_correlated_py,
+        py::arg("X"),
+        py::arg("y"),
+        py::arg("n_trials"),
+        py::arg("offset"),
+        py::arg("fit_intercept") = true,
+        py::arg("intercept0") = 0.0,
+        py::arg("beta0"),
+        py::arg("standardize") = py::none(),
+        py::arg("lambda_l2_mat"),
+        py::arg("lambda") = 1.0,
+        py::arg("penalty_factor") = py::none(),
+        py::arg("max_iter") = 25,
+        py::arg("tol") = 1e-8,
+        py::arg("link") = "logit",
+        py::arg("eps_mu") = 1e-15,
+        py::arg("eps_dmu") = 1e-15);
 }

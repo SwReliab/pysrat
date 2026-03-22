@@ -1,6 +1,7 @@
 import numpy as np
-from pysrat.regression import glm_binomial_elasticnet
-from pysrat.regression import glmnet_poisson
+import pytest
+from pysrat.regression.glmnet_binomial import glmnet_binomial
+from pysrat.regression.glmnet_poisson import glmnet_poisson
 
 def test_glm_binomial_elasticnet_basic():
     np.random.seed(4)
@@ -12,10 +13,10 @@ def test_glm_binomial_elasticnet_basic():
     p_true = 1 / (1 + np.exp(-eta))
     y = np.random.binomial(1, p_true)
 
-    fit = glm_binomial_elasticnet(
+    fit = glmnet_binomial(
         X, y,
         alpha=1.0,          # pure LASSO
-        lambd=0.1,
+        lambda_=0.1,
         max_iter=50,
         tol=1e-8,
     )
@@ -45,12 +46,12 @@ def test_glm_binomial_elasticnet_aggregated():
     y = np.random.binomial(n_trials, p_true)
     y_prop = y / n_trials
 
-    fit = glm_binomial_elasticnet(
+    fit = glmnet_binomial(
         X, y_prop,
         n_trials=n_trials,
         y_is_proportion=True,
         alpha=0.8,
-        lambd=0.05,
+        lambda_=0.05,
         max_iter=50,
     )
 
@@ -72,13 +73,13 @@ def test_glm_binomial_elasticnet_penalty_mask():
     y = np.random.binomial(1, p_true)
 
     # the first two coefficients are not penalized, while the last two are penalized
-    penalty = np.array([0, 0, 1, 1], dtype=int)
+    penalty_factor = np.array([0.0, 0.0, 1.0, 1.0], dtype=float)
 
-    fit = glm_binomial_elasticnet(
+    fit = glmnet_binomial(
         X, y,
-        penalty=penalty,
+        penalty_factor=penalty_factor,
         alpha=1.0,
-        lambd=0.2,
+        lambda_=0.2,
         max_iter=50,
     )
 
@@ -91,6 +92,22 @@ def test_glm_binomial_elasticnet_penalty_mask():
 
     # penalized coefficients should be small
     assert np.all(np.abs(beta_hat[2:]) < 0.3)
+
+
+def test_glmnet_binomial_rejects_invalid_binomial_response():
+    X = np.array([[0.0], [1.0], [2.0]], dtype=float)
+    n_trials = np.array([1.0, 2.0, 1.0], dtype=float)
+
+    with pytest.raises(ValueError, match="0 <= y <= n_trials"):
+        glmnet_binomial(X, np.array([0.0, 3.0, 1.0]), n_trials=n_trials)
+
+    with pytest.raises(ValueError, match="0 <= y <= 1"):
+        glmnet_binomial(
+            X,
+            np.array([0.0, 1.2, 0.5]),
+            n_trials=n_trials,
+            y_is_proportion=True,
+        )
 
 def test_glm_poisson_elasticnet_basic():
     np.random.seed(10)
