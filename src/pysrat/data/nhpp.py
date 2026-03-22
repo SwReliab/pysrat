@@ -92,12 +92,6 @@ class NHPPData:
         )
 
     @classmethod
-    def from_event_times(cls, intervals, *, te) -> "NHPPData":
-        counts = np.zeros_like(intervals, dtype=int)
-        on_boundary = np.zeros_like(intervals, dtype=int)
-        return cls.from_intervals(intervals=intervals, counts=counts, on_boundary=on_boundary, te=te)
-
-    @classmethod
     def from_dataframe(
         cls,
         df,
@@ -105,7 +99,6 @@ class NHPPData:
         intervals: str | None = None,
         counts: str | None = None,
         boundary: str | None = None,
-        times: str | None = None,
         te: float | None = None,
     ):
         """
@@ -116,22 +109,10 @@ class NHPPData:
         intervals : column name of interval lengths
         counts : column name of counts
         boundary : column name of boundary indicator
-        times : column name of event times (mutually exclusive with intervals)
-        te : last observation time (required if times is given)
+        te : last observation time (used when counts and boundary are omitted)
         """
 
         import numpy as np
-
-        # ---- event times mode ----
-        if times is not None:
-            if intervals is not None:
-                raise ValueError("Specify either times or intervals, not both.")
-            if te is None:
-                raise ValueError("te must be provided when using times.")
-            return cls.from_event_times(
-                times=np.asarray(df[times], dtype=float),
-                te=te,
-            )
 
         # ---- intervals mode ----
         if intervals is None and counts is None:
@@ -156,6 +137,7 @@ class NHPPData:
             intervals=intervals_arr,
             counts=counts_arr,
             on_boundary=boundary_arr,
+            te=te,
         )
 
     @classmethod
@@ -166,7 +148,6 @@ class NHPPData:
         intervals: str | None = None,
         counts: str | None = None,
         boundary: str | None = None,
-        times: str | None = None,
         te: float | None = None,
         **read_csv_kwargs,
     ):
@@ -187,11 +168,8 @@ class NHPPData:
         boundary : str, optional
             Column name of boundary indicator.
 
-        times : str, optional
-            Column name of event times (mutually exclusive with intervals).
-
         te : float, optional
-            Last observation time (required if times is given).
+            Last observation time (used when counts and boundary are omitted).
 
         read_csv_kwargs :
             Additional keyword arguments passed to pandas.read_csv().
@@ -213,7 +191,6 @@ class NHPPData:
             intervals=intervals,
             counts=counts,
             boundary=boundary,
-            times=times,
             te=te,
         )
 

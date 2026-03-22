@@ -1,3 +1,9 @@
+# pysrat 0.2.6
+
+- refactor binomial regression wrappers (`glm_binomial`, `glmnet_binomial`) and align C++/pybind integration
+- add Python-side validation for binomial response (`y`/`n_trials`) in binomial GLM/GLMNET wrappers
+- simplify `NHPPData` constructors to use `from_intervals` as the base path and remove `from_event_times`
+
 # pysrat 0.2.5
 
 - refactor Poisson regression wrappers (`glm_poisson` and `glmnet_poisson`) and corresponding C++/pybind integration
