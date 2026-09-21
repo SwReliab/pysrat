@@ -260,14 +260,15 @@ models = {
     for nm in names
 }
 
-# static metrics of the modules; the row index gives the module names
+# static metrics of the modules; the row index gives the module names.
+# Three of the seven columns are used: 3 metrics + intercept = 4 coefficients,
+# which leaves 2 residual degrees of freedom on 6 modules.
+smetrics = pd.read_csv(root.joinpath("tomcat5_smetrics.csv"), index_col=0)
 sdata = SMetricsData.from_dataframe(
-    pd.read_csv(root.joinpath("tomcat5_smetrics.csv"), index_col=0),
-    use_index_as_name=True)
+    smetrics[["LOC", "Fn", "Ac"]], use_index_as_name=True)
 
-# 7 metrics + intercept = 8 coefficients from 6 modules, so a penalty is required
-fit = fit_pr_nhpp(models, sdata, reg="glm", lambd=50.0)
-print(fit["converged"], fit["n_iter"])   # True 5743
+fit = fit_pr_nhpp(models, sdata, reg="glm")
+print(fit["converged"], fit["n_iter"])   # True 812
 print(fit["coef"])
 ```
 
@@ -293,9 +294,10 @@ stop short.
 
 - **Identifiability.** The regression estimates `1 + q` coefficients, where `q` is the
   number of metrics, from `m` modules. When `1 + q >= m` the model is not identified and
-  the loop never converges, however many iterations it is given. A penalty (`lambd > 0`)
-  restores convergence. The bundled Tomcat data has 6 modules and 7 metrics, hence the
-  `lambd=50.0` above.
+  the loop never converges, however many iterations it is given. Either use fewer
+  metrics, as above, or add a penalty (`lambd > 0`, optionally with
+  `reg="elasticnet"`). The bundled Tomcat data has 6 modules, so all 7 of its metrics
+  cannot be used at once without a penalty.
 - **Iteration count.** The loop runs one EM step per iteration, so it converges slowly.
   A few thousand iterations are normal even when the model is well posed; the default
   `max_outer_iter` is 10000.
