@@ -6,9 +6,38 @@ on:
       - "v*"
 
 jobs:
+  check-version:
+    name: Check tag matches pyproject version
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # The package version comes from pyproject.toml, not from the tag, so a
+      # mismatch would publish something other than what the tag says.
+      - name: Compare
+        run: |
+          python - <<'PY'
+          import os, sys, tomllib
+          tag = os.environ["GITHUB_REF_NAME"]
+          with open("pyproject.toml", "rb") as f:
+              version = tomllib.load(f)["project"]["version"]
+          if tag != f"v{version}":
+              sys.exit(
+                  f"tag {tag!r} does not match pyproject.toml version {version!r}; "
+                  f"expected tag v{version}"
+              )
+          print(f"tag {tag} matches version {version}")
+          PY
+
   build-wheels:
     name: Build wheels (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    needs: [check-version]
 
     strategy:
       fail-fast: false
@@ -56,7 +85,12 @@ jobs:
             PIP_PREFER_BINARY=1
             PIP_ONLY_BINARY="numpy,scipy"
 
-          CIBW_TEST_COMMAND: "python -c \"import pysrat; import pysrat._core; import pysrat.marlib_cf1; import pysrat.nhpp; print('import ok')\""
+          # Run the test suite against each built wheel, not just an import
+          # check. cibuildwheel skips this for cross-compiled wheels.
+          CIBW_TEST_REQUIRES: "pytest pandas"
+          CIBW_TEST_COMMAND: >
+            python -c "import pysrat, pysrat._core, pysrat.marlib_cf1, pysrat.nhpp; print('import ok')" &&
+            pytest {project}/tests -q
 
       - name: Upload wheels
         uses: actions/upload-artifact@v4
@@ -67,6 +101,7 @@ jobs:
   build-sdist:
     name: Build sdist
     runs-on: ubuntu-latest
+    needs: [check-version]
 
     steps:
       - uses: actions/checkout@v4
