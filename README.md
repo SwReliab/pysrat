@@ -265,14 +265,15 @@ sdata = SMetricsData.from_dataframe(
     pd.read_csv(root.joinpath("tomcat5_smetrics.csv"), index_col=0),
     use_index_as_name=True)
 
-fit = fit_pr_nhpp(models, sdata, reg="glm")
-print(fit["converged"], fit["n_iter"], fit["llf"])
+# 7 metrics + intercept = 8 coefficients from 6 modules, so a penalty is required
+fit = fit_pr_nhpp(models, sdata, reg="glm", lambd=50.0)
+print(fit["converged"], fit["n_iter"])   # True 5743
 print(fit["coef"])
 ```
 
 The keys of `models` must match the names in `sdata`. `reg="glm"` fits the outer
-regression without regularization; `reg="elasticnet"` adds one, controlled by `alpha`
-and `lambd`.
+regression by IRLS and `reg="elasticnet"` adds an L1/L2 mix controlled by `alpha`;
+both accept `lambd` as the penalty strength.
 
 `SMetricsData` can also be built directly, which is useful when the metrics do not come
 from a data frame. The offset is optional and may be overridden at call time.
@@ -287,9 +288,19 @@ sdata = SMetricsData(
 )
 ```
 
-**Check `fit["converged"]` before using the result.** The outer loop stops at
-`max_outer_iter` (2000 by default) whether or not it has converged, and on the bundled
-Tomcat data it does reach that limit.
+**Check `fit["converged"]` before using the result.** Two things make the outer loop
+stop short.
+
+- **Identifiability.** The regression estimates `1 + q` coefficients, where `q` is the
+  number of metrics, from `m` modules. When `1 + q >= m` the model is not identified and
+  the loop never converges, however many iterations it is given. A penalty (`lambd > 0`)
+  restores convergence. The bundled Tomcat data has 6 modules and 7 metrics, hence the
+  `lambd=50.0` above.
+- **Iteration count.** The loop runs one EM step per iteration, so it converges slowly.
+  A few thousand iterations are normal even when the model is well posed; the default
+  `max_outer_iter` is 10000.
+
+A `RuntimeWarning` is issued if the loop ends without converging.
 
 ## Examples
 
