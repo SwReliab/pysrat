@@ -11,15 +11,26 @@ implementations exposed from C++ via pybind11.
 - Fast EM updates implemented in C++ and exposed via pybind11
 - A collection of classical NHPP models and CF1 (canonical phase-type)
 - Plotting helpers for visualization (`plot_mvf`, `plot_dmvf`, `plot_rate`)
-- Multi-factor models (MFLogitNHPP, MFProbitNHPP, MFCloglogNHPP)
+- Metrics-based (multi-factor) models in which software metrics enter as covariates
+  (`MFLogitNHPP`, `MFProbitNHPP`, `MFCloglogNHPP`)
+- User-defined link functions: supply the inverse link and its derivative, and the
+  EM algorithm, likelihood, AIC and variable selection are inherited
+- Offsets, which express Cox proportional-hazards models without dedicated code
+- AIC-based variable selection (`stepwise`)
 - A Poisson regression–based framework (`fit_pr_nhpp`)
 
 ### Installation
 
-From source (recommended during development):
-
 ```bash
 pip install pysrat
+```
+
+To build from source (recommended during development):
+
+```bash
+git clone https://github.com/SwReliab/pysrat.git
+cd pysrat
+pip install -e .
 ```
 
 Requirements
@@ -123,6 +134,106 @@ m2 = GammaNHPP().fit(data)
 best = min((m1, m2), key=lambda m: m.aic_)
 print("Best model:", best.name)
 ```
+
+### Metrics-based (multi-factor) models
+
+These models let software metrics enter as covariates of the fault-detection
+probability. The data are held by `DMetricsData`, and each model differs only in its
+link function.
+
+```python
+import importlib.resources as resources
+import pandas as pd
+
+from pysrat.data import DMetricsData
+from pysrat.nhpp import MFLogitNHPP, MFProbitNHPP, MFCloglogNHPP, stepwise
+
+# a bundled data set: one row per testing period
+path = resources.files("pysrat").joinpath("datasets/dmetrics/dmetrics1.csv")
+df = pd.read_csv(path)
+
+data = DMetricsData.from_dataframe(
+    df, metrics=["day", "tc", "ctc", "cov", "ccov"], fault="fault")
+
+model = MFLogitNHPP().fit(data)
+print(model.aic_)          # 82.895
+
+best = stepwise(model)     # AIC-based variable selection
+print(best.aic_, best.data_.metrics_name)   # 79.074 ['day', 'tc', 'ctc']
+```
+
+Switching the link function is a matter of replacing the class, so `MFProbitNHPP`
+and `MFCloglogNHPP` are used in exactly the same way.
+
+Two points are worth noting.
+
+- **Do not put a constant column in `metrics`.** The intercept is handled by the model
+  through `has_intercept`; passing `intercept=True` raises `ValueError`.
+- **An offset turns the cloglog model into a Cox proportional-hazards model.** The
+  offset is the complementary log-log of the baseline hazard rate, so a discrete
+  Weibull baseline with shape `m` needs no dedicated class:
+
+```python
+import numpy as np
+
+k = np.arange(1, len(df) + 1, dtype=float)
+df["off"] = np.log(k**m - (k - 1.0)**m)      # Weibull offset, up to a constant
+data = DMetricsData.from_dataframe(
+    df, metrics=[...], fault="fault", offset="off")
+model = MFCloglogNHPP().fit(data)
+```
+
+See [`docs/metrics-models.md`](docs/metrics-models.md) for the formulation.
+
+### Adding a link function
+
+The E-step of the EM algorithm does not depend on the link function, and the M-step is
+a fit of a generalized linear model to weighted binomial data. Within that fit, the link
+function enters through one step only: computing the fault-detection probability
+`mu = linkinv(z)` and its derivative `dmu/dz` from the linear predictor `z`.
+
+`DynamicGLMBase` therefore exposes these two as its extension points. The example below
+is the logit link under a Box-Cox transformation, which has one shape parameter `lam`.
+
+```python
+import numpy as np
+from pysrat.nhpp.multifactor._dglm import DynamicGLMBase
+
+EPS = 1e-12
+
+class MFBoxCoxNHPP(DynamicGLMBase):
+    link = "boxcox"
+
+    def __init__(self, lam=0.0, has_intercept=True):
+        super().__init__(has_intercept=has_intercept)
+        self.lam = float(lam)
+
+    def _linkinv(self, z):
+        if self.lam == 0.0:
+            return 1.0 / (1.0 + np.exp(-z))
+        w = np.maximum(1.0 + self.lam * z, EPS)
+        return 1.0 / (1.0 + w**(-1.0 / self.lam))
+
+    def _dmu(self, z, mu):
+        if self.lam == 0.0:
+            return mu * (1.0 - mu)
+        return mu * (1.0 - mu) / (1.0 + self.lam * z)
+
+    def _link_domain(self, z):          # only for a restricted domain
+        return 1.0 + self.lam * z > EPS
+```
+
+Everything else -- the EM algorithm, the log likelihood, AIC and `stepwise` -- is
+inherited. `_link_domain` is needed only when the link is undefined on part of the real
+line, as here, where `1 + lam * z > 0` is required; the M-step then never steps outside
+that domain.
+
+A link function with a parameter such as `lam` stays inside the GLM family once the
+parameter is fixed, so an outer one-dimensional search over the parameter, with the EM
+algorithm run to convergence at each value, estimates it.
+
+The built-in links (`logit`, `probit`, `cloglog`) keep using the C++ IRLS; only
+user-defined links go through the Python one.
 
 ### PR-NHPP regression framework
 

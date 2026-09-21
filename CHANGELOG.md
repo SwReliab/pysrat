@@ -12,6 +12,13 @@
   Python port of the C++ IRLS with the same standardization, weights, working
   variate, step-halving and convergence criterion.
 
+## Fixed
+
+- `NHPPModel.name` had only a type annotation and no default, so a subclass that
+  did not set it raised `AttributeError` from the warning path in `nhpp/_em.py`
+  ("LLF decreases"). It now falls back to the class name. Subclasses that set
+  `name` as a class attribute are unaffected.
+
 ## Unchanged
 
 - The built-in links (`logit`, `probit`, `cloglog`) still go through the C++
