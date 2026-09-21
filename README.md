@@ -237,25 +237,59 @@ user-defined links go through the Python one.
 
 ### PR-NHPP regression framework
 
-`fit_pr_nhpp` fits module-wise NHPP models with a Poisson regression outer loop.
+`fit_pr_nhpp` fits module-wise NHPP models with a Poisson regression outer loop. Each
+module has its own fault data and thus its own NHPP model, while the static metrics of
+the modules explain the differences between their expected fault counts.
+
+```python
+import importlib.resources as resources
+import pandas as pd
+
+from pysrat.data import NHPPData, SMetricsData
+from pysrat.nhpp import GammaNHPP
+from pysrat.nhpp.regression import fit_pr_nhpp
+
+root = resources.files("pysrat").joinpath("datasets/smetrics")
+names = ["catalina", "connector", "jasper", "servlets", "tester", "webapps"]
+
+# one NHPP model per module, fitted to that module's fault data
+models = {
+    nm: GammaNHPP().fit(
+        NHPPData.from_csv(root.joinpath(f"tomcat5_{nm}.csv"),
+                          intervals="time", counts="fault"))
+    for nm in names
+}
+
+# static metrics of the modules; the row index gives the module names
+sdata = SMetricsData.from_dataframe(
+    pd.read_csv(root.joinpath("tomcat5_smetrics.csv"), index_col=0),
+    use_index_as_name=True)
+
+fit = fit_pr_nhpp(models, sdata, reg="glm")
+print(fit["converged"], fit["n_iter"], fit["llf"])
+print(fit["coef"])
+```
+
+The keys of `models` must match the names in `sdata`. `reg="glm"` fits the outer
+regression without regularization; `reg="elasticnet"` adds one, controlled by `alpha`
+and `lambd`.
+
+`SMetricsData` can also be built directly, which is useful when the metrics do not come
+from a data frame. The offset is optional and may be overridden at call time.
 
 ```python
 import numpy as np
-from pysrat.data import SMetricsData
-from pysrat.nhpp.regression import fit_pr_nhpp
 
-# names must align with your model dictionary keys
 sdata = SMetricsData(
     names=["mod_a", "mod_b", "mod_c"],
     metrics=np.array([[1.2, 0.3], [0.7, 1.0], [1.5, 0.4]], dtype=float),
     offset=np.log(np.array([1200.0, 900.0, 1500.0], dtype=float)),  # optional
 )
-
-fit = fit_pr_nhpp(models, sdata, reg="glm")
-
-# You can also override offset at call-time (shape = number of modules)
-fit2 = fit_pr_nhpp(models, sdata, reg="glm", offset=np.log(np.array([1.0, 2.0, 4.0])))
 ```
+
+**Check `fit["converged"]` before using the result.** The outer loop stops at
+`max_outer_iter` (2000 by default) whether or not it has converged, and on the bundled
+Tomcat data it does reach that limit.
 
 ## Examples
 
