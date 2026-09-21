@@ -177,7 +177,7 @@ class DynamicGLMBase(NHPPModel):
             intercept0=intercept,
             beta0=beta,
             fit_intercept=self.has_intercept,
-            link=self.link,
+            link=self._link_arg(),
             max_iter=int(kwargs.get("max_glm_iter", 50)),
             tol=float(kwargs.get("glm_tol", 1e-9)),
             y_is_proportion=True,
@@ -202,7 +202,37 @@ class DynamicGLMBase(NHPPModel):
     # --- link functions ----------------------------------------------------
     @abstractmethod
     def _linkinv(self, eta: np.ndarray) -> np.ndarray:
+        """Inverse link: mu = g^{-1}(eta)."""
         ...
+
+    def _dmu(self, eta: np.ndarray, mu: np.ndarray) -> Optional[np.ndarray]:
+        """Derivative d mu / d eta of the inverse link.
+
+        Subclasses that define a link function of their own override this.
+        The default returns ``None``, which means ``link`` names one of the
+        built-in links and the M-step is carried out by the C++ IRLS.
+        """
+        return None
+
+    def _link_domain(self, eta: np.ndarray) -> Optional[np.ndarray]:
+        """Where the link is defined, as a boolean array over ``eta``.
+
+        The default is ``None``, meaning the whole real line. A link such as
+        the Box-Cox logit, which needs ``1 + lambda*eta > 0``, overrides this
+        so that the M-step never steps outside its domain.
+        """
+        return None
+
+    def _link_arg(self):
+        """What to pass to :func:`glm_binomial` as its ``link``.
+
+        A subclass that overrides :meth:`_dmu` supplies its own link, so the
+        pair of callables is passed and the M-step runs the Python IRLS.
+        Otherwise the link name is passed and the C++ IRLS is used.
+        """
+        if type(self)._dmu is DynamicGLMBase._dmu:
+            return self.link
+        return (self._linkinv, self._dmu, self._link_domain)
 
     # --- likelihood --------------------------------------------------------
 

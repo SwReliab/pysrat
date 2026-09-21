@@ -1,11 +1,17 @@
 from __future__ import annotations
 
-from typing import Optional, TypedDict
+from typing import Callable, Optional, Tuple, TypedDict, Union
 
 import numpy as np
 
 from .. import _glm as _cglm
 from ._binomial_validation import prepare_binomial_response
+from ._irls_binomial import irls_binomial
+
+#: A link is either a built-in name handled by the C++ layer, or a tuple
+#: ``(linkinv, dmu)`` -- optionally ``(linkinv, dmu, domain)`` -- of callables
+#: evaluated in Python.
+LinkArg = Union[str, Tuple[Callable, ...]]
 
 
 class GLMBinomialFit(TypedDict):
@@ -24,7 +30,7 @@ def glm_binomial(
     intercept0: float = 0.0,
     beta0: Optional[np.ndarray] = None,
     fit_intercept: bool = True,
-    link: str = "logit",
+    link: LinkArg = "logit",
     max_iter: int = 25,
     tol: float = 1e-8,
     y_is_proportion: bool = False,
@@ -58,8 +64,14 @@ def glm_binomial(
         Initial coefficient vector. If None, uses zeros.
     fit_intercept : bool
         If True, estimate intercept separately from X.
-    link : str
-        Link name passed to the C++ layer, e.g. "logit", "probit", "cloglog".
+    link : str or (callable, callable)
+        Either a link name passed to the C++ layer ("logit", "probit",
+        "cloglog"), or a pair ``(linkinv, dmu)`` of callables defining a
+        custom link. ``linkinv(eta)`` returns mu and ``dmu(eta, mu)`` returns
+        d mu / d eta. A third element ``domain(eta)`` may mark where the link
+        is defined, for links with a restricted domain. A custom link is fitted by the Python IRLS in
+        :mod:`pysrat.regression._irls_binomial`, which implements the same
+        algorithm as the C++ layer.
     max_iter : int
     tol : float
     y_is_proportion : bool
@@ -130,6 +142,36 @@ def glm_binomial(
     pf_arg = None if penalty_factor is None else np.asarray(penalty_factor, dtype=np.float64)
     if pf_arg is not None and pf_arg.shape != (p,):
         raise ValueError("penalty_factor length must match X.cols()")
+
+    if not isinstance(link, str):
+        # custom link -> Python IRLS (the C++ layer only knows the built-in names)
+        if lambda_l2_mat is not None:
+            raise NotImplementedError(
+                "lambda_l2_mat is not supported for custom link functions")
+        if len(link) == 2:
+            (linkinv, dmu_fn), domain = link, None
+        else:
+            linkinv, dmu_fn, domain = link
+
+        def _link_eval(eta):
+            mu = np.asarray(linkinv(eta), dtype=np.float64)
+            return mu, np.asarray(dmu_fn(eta, mu), dtype=np.float64)
+
+        return irls_binomial(
+            X, y_call, n_trials, offset,
+            link_eval=_link_eval,
+            domain=domain,
+            intercept0=float(intercept0),
+            beta0=beta0,
+            fit_intercept=bool(fit_intercept),
+            standardize=std_arg,
+            max_iter=int(max_iter),
+            tol=float(tol),
+            lambda_=float(lambda_),
+            penalty_factor=pf_arg,
+            eps_mu=float(eps_mu),
+            eps_dmu=float(eps_dmu),
+        )
 
     if lambda_l2_mat is None:
         res = _cglm.glm_binomial_identity(
