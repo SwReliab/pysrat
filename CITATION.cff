@@ -1,0 +1,35 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it using the metadata from this file."
+type: software
+title: pysrat
+abstract: >-
+  A Python package for fitting and analysing NHPP (non-homogeneous Poisson
+  process) software reliability models. It provides a scikit-learn-style API
+  and EM algorithm implementations in C++ exposed via pybind11, together with
+  multi-factor (metrics-based) models in which the fault-detection probability
+  is described by a generalized linear model. Logit, probit and cloglog links
+  are built in, an offset term expresses Cox proportional-hazards models, and
+  user-defined link functions can be added by supplying the inverse link and
+  its derivative.
+authors:
+  - family-names: Okamura
+    given-names: Hiroyuki
+    email: okamu@hiroshima-u.ac.jp
+    affiliation: Hiroshima University
+  - family-names: Zheng
+    given-names: Junjun
+    affiliation: Hiroshima University
+  - family-names: Dohi
+    given-names: Tadashi
+    affiliation: Hiroshima University
+version: 0.2.7
+license: MIT
+repository-code: "https://github.com/SwReliab/pysrat"
+url: "https://github.com/SwReliab/pysrat"
+keywords:
+  - software reliability
+  - non-homogeneous Poisson process
+  - software metrics
+  - generalized linear model
+  - EM algorithm
+  - Python
