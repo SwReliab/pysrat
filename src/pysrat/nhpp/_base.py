@@ -6,8 +6,18 @@ from ..data import NHPPData
 
 
 class NHPPModel(ABC):
-    name: str
     df: int
+
+    @property
+    def name(self) -> str:
+        """Model name, used in warnings and debug output (see ``_em.py``).
+
+        Subclasses normally set it as a class attribute, e.g. ``name = "exp"``,
+        which shadows this property. Those that do not -- for instance a
+        user-defined link function class -- fall back to the class name instead
+        of raising ``AttributeError``.
+        """
+        return type(self).__name__
 
     def __init__(self, **hyperparams):
         self._hyperparams = dict(hyperparams)

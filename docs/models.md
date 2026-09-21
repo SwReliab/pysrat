@@ -1,5 +1,9 @@
 # NHPP Models
 
+These models take only the fault counts as their input. For the metrics-based
+(multi-factor) models, in which software metrics enter as covariates, see
+[`metrics-models.md`](metrics-models.md).
+
 ## Mean value function
 
 All NHPP models in this package use the same mean value function:
