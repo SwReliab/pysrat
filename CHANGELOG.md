@@ -12,6 +12,17 @@
   Python port of the C++ IRLS with the same standardization, weights, working
   variate, step-halving and convergence criterion.
 
+## Changed
+
+- `fit_pr_nhpp` now warns (`RuntimeWarning`) when its outer loop reaches
+  `max_outer_iter` without converging, instead of silently returning
+  `converged=False`. The message reports the last change and how many
+  coefficients are being estimated from how many modules.
+- The default `max_outer_iter` of `fit_pr_nhpp` is raised from 2000 to 10000.
+  The loop runs one EM step per iteration, so even a well-posed problem needs a
+  few thousand of them; the old default reported non-convergence on problems
+  that do converge.
+
 ## Fixed
 
 - `NHPPModel.name` had only a type annotation and no default, so a subclass that

@@ -1,6 +1,8 @@
 # pysrat/nhpp/regression/pr_nhpp.py
 from __future__ import annotations
 
+import warnings
+
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple, Union, Literal
 
 import numpy as np
@@ -138,7 +140,7 @@ def fit_pr_nhpp(
     fit_intercept: bool = True,
     initialize: bool = True,
     # outer loop
-    max_outer_iter: int = 2000,
+    max_outer_iter: int = 10000,
     outer_tol: float = 1e-6,
     # regression method
     reg: Literal["glm", "elasticnet"] = "elasticnet",
@@ -190,6 +192,16 @@ def fit_pr_nhpp(
 
     standardize:
         Optional override for sdata.standardize. If None, use sdata.standardize.
+
+    Notes
+    -----
+    The outer loop runs one EM step per iteration, so it converges slowly; a few
+    thousand iterations are normal. It also estimates ``1 + q`` coefficients
+    (``q`` = number of metrics, plus the intercept) from ``m`` modules. When
+    ``1 + q >= m`` the regression is not identified and the loop will not
+    converge at all unless a penalty is applied (``lambd > 0``, optionally with
+    ``reg="elasticnet"``). A warning is issued if the loop ends without
+    converging; always check ``result["converged"]``.
 
     Returns
     -------
@@ -391,6 +403,18 @@ def fit_pr_nhpp(
         if diff < outer_tol:
             converged_outer = True
             break
+
+    if not converged_outer:
+        warnings.warn(
+            f"fit_pr_nhpp: the outer loop reached max_outer_iter={max_outer_iter} "
+            f"without converging (last change {diff:.3e}, outer_tol={outer_tol:g}). "
+            "The result should not be used as is. The regression estimates "
+            f"{k} coefficients from {m} modules; if {k} >= {m} the model is not "
+            "identified and a penalty is needed (pass lambd>0, or reg='elasticnet'). "
+            "Otherwise the alternating scheme simply needs more iterations.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
 
     # ---- Write back final params to models (best-effort)
     if update_models:
